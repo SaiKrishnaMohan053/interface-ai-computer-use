@@ -1,0 +1,23 @@
+node_modules/
+dist/
+coverage/
+
+.env
+.env.*
+!.env.example
+
+*.log
+*.tsbuildinfo
+
+playwright-report/
+test-results/
+
+# Runtime outputs are private by default.
+artifacts/*
+!artifacts/.gitkeep
+
+evidence/*
+!evidence/.gitkeep
+
+.DS_Store
+Thumbs.db
