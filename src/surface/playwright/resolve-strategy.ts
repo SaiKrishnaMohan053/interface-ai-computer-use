@@ -119,6 +119,10 @@ async function structuralHandles(
           .join(' ');
       }
 
+      if (element instanceof HTMLTableElement && element.caption) {
+        return element.caption.textContent ?? '';
+      }
+
       return element.textContent ?? '';
     };
 
@@ -205,24 +209,38 @@ async function structuralHandles(
       const results: Element[] = [];
 
       for (const table of document.querySelectorAll('table')) {
-        const headers = [...table.querySelectorAll('th')].filter((header) =>
-          matches(header.textContent ?? '', query.columnHeader),
+        if (!matches(accessibleName(table), query.table.name)) {
+          continue;
+        }
+
+        const rowHeaders = [...table.querySelectorAll('th')].filter((header) =>
+          matches(header.textContent ?? '', query.row.columnHeader),
         );
 
-        for (const header of headers) {
-          const columnIndex = header.cellIndex;
+        const resultHeaders = [...table.querySelectorAll('th')].filter((header) =>
+          matches(header.textContent ?? '', query.column.header),
+        );
 
-          for (const row of table.querySelectorAll('tr')) {
-            const cells = [...row.querySelectorAll(':scope > th, :scope > td')];
+        for (const rowHeader of rowHeaders) {
+          const rowColumnIndex = rowHeader.cellIndex;
 
-            if (!cells.some((cell) => matches(cell.textContent ?? '', query.rowAnchor))) {
-              continue;
-            }
+          for (const resultHeader of resultHeaders) {
+            const resultColumnIndex = resultHeader.cellIndex;
 
-            const target = cells[columnIndex];
+            for (const row of table.querySelectorAll('tr')) {
+              const cells = [...row.querySelectorAll(':scope > th, :scope > td')];
 
-            if (target && target !== header) {
-              results.push(target);
+              const rowKeyCell = cells[rowColumnIndex];
+
+              if (!rowKeyCell || !matches(rowKeyCell.textContent ?? '', query.row.value)) {
+                continue;
+              }
+
+              const target = cells[resultColumnIndex];
+
+              if (target && target !== rowHeader && target !== resultHeader) {
+                results.push(target);
+              }
             }
           }
         }

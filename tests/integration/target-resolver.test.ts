@@ -150,9 +150,10 @@ describe('TargetResolver with PlaywrightSurface', () => {
     });
   });
 
-  it('resolves a table cell structurally by row anchor and column header', async () => {
+  it('resolves a table cell structurally by table, row key and result column', async () => {
     await resources.page.setContent(`
         <table>
+          <caption>Accounts</caption>
           <thead>
             <tr>
               <th>Account Type</th>
@@ -188,9 +189,19 @@ describe('TargetResolver with PlaywrightSurface', () => {
               query: {
                 kind: 'table-cell',
 
-                rowAnchor: exact('Savings'),
+                table: {
+                  name: exact('Accounts'),
+                },
 
-                columnHeader: exact('Current Balance'),
+                row: {
+                  columnHeader: exact('Account Type'),
+
+                  value: exact('Savings'),
+                },
+
+                column: {
+                  header: exact('Current Balance'),
+                },
               },
             },
           ],

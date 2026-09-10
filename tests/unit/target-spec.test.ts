@@ -30,10 +30,23 @@ describe('TargetSpec', () => {
         },
         {
           kind: 'structural',
+
           query: {
             kind: 'table-cell',
-            rowAnchor: exact('Savings'),
-            columnHeader: exact('Current Balance'),
+
+            table: {
+              name: exact('Accounts'),
+            },
+
+            row: {
+              columnHeader: exact('Account Type'),
+
+              value: exact('Savings'),
+            },
+
+            column: {
+              header: exact('Current Balance'),
+            },
           },
         },
         {

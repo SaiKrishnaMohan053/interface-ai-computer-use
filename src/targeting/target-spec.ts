@@ -73,8 +73,26 @@ const structuralQuerySchema = z.discriminatedUnion('kind', [
   z
     .object({
       kind: z.literal('table-cell'),
-      rowAnchor: targetTextMatchSchema,
-      columnHeader: targetTextMatchSchema,
+
+      table: z
+        .object({
+          name: targetTextMatchSchema,
+        })
+        .strict(),
+
+      row: z
+        .object({
+          columnHeader: targetTextMatchSchema,
+
+          value: targetTextMatchSchema,
+        })
+        .strict(),
+
+      column: z
+        .object({
+          header: targetTextMatchSchema,
+        })
+        .strict(),
     })
     .strict(),
 
