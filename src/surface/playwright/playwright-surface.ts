@@ -568,10 +568,16 @@ export class PlaywrightSurface implements SurfaceAdapter<PlaywrightStrategy> {
         break;
 
       case 'loadingComplete':
-        // Requires an explicit application completion marker.
+        // Explicit completion marker supplied by a concrete application integration.
+        expected = 'complete';
+
         observed =
-          (await this.page.locator('[data-surface-ready="true"]:visible').count()) > 0 &&
-          (await this.page.locator('[aria-busy="true"]:visible').count()) === 0;
+          (await this.page.locator('[aria-busy="true"]:visible').count()) > 0
+            ? 'loading'
+            : (await this.page.locator('[data-surface-ready="true"]:visible').count()) > 0
+              ? 'complete'
+              : 'unknown';
+
         break;
 
       case 'textPresent': {

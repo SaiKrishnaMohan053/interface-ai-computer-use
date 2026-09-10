@@ -199,13 +199,15 @@ export function collect(options: { maxTextLength: number; maxControls: number })
 
   const text = parts.join('\n');
 
+  const busy = [...document.querySelectorAll('[aria-busy="true"]')].some(visible);
+
+  const ready = [...document.querySelectorAll('[data-surface-ready="true"]')].some(visible);
+
   return {
     visibleText: text.slice(0, options.maxTextLength),
     controls,
     dialogs,
-    loading: [...document.querySelectorAll('[aria-busy="true"]')].some(visible)
-      ? ('loading' as const)
-      : ('unknown' as const),
+    loading: busy ? ('loading' as const) : ready ? ('complete' as const) : ('unknown' as const),
     truncated: {
       visibleText: text.length > options.maxTextLength,
       controls: all.length > options.maxControls,

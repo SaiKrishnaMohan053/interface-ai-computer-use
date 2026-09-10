@@ -129,7 +129,7 @@ function layout(title: string, content: string): string {
   <nav aria-label="Primary navigation">
     <a href="/member-search">Member Search</a>
   </nav>
-  <main>
+  <main data-surface-ready="true">
     <h1>${escapeHtml(title)}</h1>
     ${content}
   </main>
