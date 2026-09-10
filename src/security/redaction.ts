@@ -162,6 +162,14 @@ export function serializeSanitized(payload: SanitizedPayload): string {
   return `${JSON.stringify(payload.value, null, 2)}\n`;
 }
 
+export function serializeSanitizedLine(payload: SanitizedPayload): string {
+  if (!(payload instanceof SanitizedPayload)) {
+    throw new TypeError('Persistence requires a SanitizedPayload');
+  }
+
+  return `${JSON.stringify(payload.value)}\n`;
+}
+
 /**
  * Only already-sanitized bytes reach the filesystem API.
  */

@@ -7,5 +7,6 @@ export {
   sanitizeAndWriteJson,
   sanitizeForPersistence,
   serializeSanitized,
+  serializeSanitizedLine,
   writeSanitizedJson,
 } from './redaction.js';
