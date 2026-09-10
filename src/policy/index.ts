@@ -15,6 +15,8 @@ export {
   routeMatchSchema,
 } from './policy-schema.js';
 
+export { PolicyEngine } from './policy-engine.js';
+
 export type {
   AllowedOrigin,
   AllowedRoute,
@@ -26,3 +28,5 @@ export type {
   RiskRule,
   RouteMatch,
 } from './policy-schema.js';
+
+export type { PolicyEvaluationRequest } from './policy-engine.js';

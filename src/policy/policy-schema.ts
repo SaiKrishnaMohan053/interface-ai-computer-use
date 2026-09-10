@@ -218,7 +218,6 @@ export type PolicyConfig = z.infer<typeof policyConfigSchema>;
 
 const policyDecisionBaseSchema = z.object({
   policyId: identifier,
-  riskLevel: riskLevelSchema,
   matchedRuleId: identifier.nullable(),
   reason: description,
 });
@@ -228,6 +227,7 @@ export const policyDecisionSchema = z
     policyDecisionBaseSchema
       .extend({
         decision: z.literal('ALLOW'),
+        riskLevel: riskLevelSchema,
       })
       .strict(),
 
@@ -235,6 +235,12 @@ export const policyDecisionSchema = z
       .extend({
         decision: z.literal('DENY'),
         code: z.literal('POLICY_DENIED'),
+
+        /*
+         * Allowlist validation can deny before
+         * risk evaluation takes place.
+         */
+        riskLevel: riskLevelSchema.nullable(),
       })
       .strict(),
 
@@ -242,6 +248,7 @@ export const policyDecisionSchema = z
       .extend({
         decision: z.literal('REQUIRE_HUMAN'),
         code: z.literal('HUMAN_APPROVAL_REQUIRED'),
+        riskLevel: riskLevelSchema,
       })
       .strict(),
   ])
