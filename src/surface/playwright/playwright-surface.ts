@@ -604,12 +604,20 @@ export class PlaywrightSurface implements SurfaceAdapter<PlaywrightStrategy> {
         // Explicit completion marker supplied by a concrete application integration.
         expected = 'complete';
 
-        observed =
-          (await this.page.locator('[aria-busy="true"]:visible').count()) > 0
-            ? 'loading'
-            : (await this.page.locator('[data-surface-ready="true"]:visible').count()) > 0
-              ? 'complete'
-              : 'unknown';
+        observed = await this.page.evaluate(() => {
+          const visible = (element: Element): boolean =>
+            element instanceof HTMLElement &&
+            element.checkVisibility({
+              checkOpacity: true,
+              checkVisibilityCSS: true,
+            });
+
+          const busy = [...document.querySelectorAll('[aria-busy="true"]')].some(visible);
+
+          const ready = [...document.querySelectorAll('[data-surface-ready="true"]')].some(visible);
+
+          return busy ? 'loading' : ready ? 'complete' : 'unknown';
+        });
 
         break;
 
@@ -634,6 +642,35 @@ export class PlaywrightSurface implements SurfaceAdapter<PlaywrightStrategy> {
       expected,
       observed,
     };
+  }
+
+  private async checkDuringTransition(condition: SurfaceCondition<ConditionTarget>): Promise<{
+    passed: boolean;
+    expected: JsonValue;
+    observed: JsonValue;
+  }> {
+    try {
+      return await this.check(condition);
+    } catch (error) {
+      if (error instanceof Fault) {
+        throw error;
+      }
+
+      if (this.poisoned || this.page.isClosed()) {
+        throw new Fault('SURFACE_UNAVAILABLE', 'Surface unavailable during condition evaluation');
+      }
+
+      /*
+       * Navigation may replace the execution context
+       * between polling attempts. This is a temporary
+       * mismatch, not an immediate terminal failure.
+       */
+      return {
+        passed: false,
+        expected: 'stable surface for condition evaluation',
+        observed: 'surface transitioning',
+      };
+    }
   }
 
   async evaluate(
@@ -684,7 +721,7 @@ export class PlaywrightSurface implements SurfaceAdapter<PlaywrightStrategy> {
             );
           }
 
-          return this.check(prepared.condition);
+          return this.checkDuringTransition(prepared.condition);
         });
 
         expected = result.expected;

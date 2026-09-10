@@ -129,11 +129,13 @@ function layout(title: string, content: string): string {
   <nav aria-label="Primary navigation">
     <a href="/member-search">Member Search</a>
   </nav>
-  <main data-surface-ready="true">
+  <main>
     <h1>${escapeHtml(title)}</h1>
     ${content}
   </main>
-  <footer>Fictional members only. No real banking transactions.</footer>
+  <footer data-surface-ready="true">
+  Fictional members only. No real banking transactions.
+</footer>
 </body>
 </html>`;
 }
