@@ -21,6 +21,7 @@ export type EvidenceRunMode =
 
 export type EvidenceEventType =
   | 'run_started'
+  | 'session_lifecycle'
   | 'observation'
   | 'policy_decision'
   | 'action'

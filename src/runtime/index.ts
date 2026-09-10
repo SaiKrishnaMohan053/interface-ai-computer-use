@@ -30,3 +30,16 @@ export type {
   RuntimeResult,
   RuntimeSuccess,
 } from './result-contracts.js';
+
+export { RunCoordinator, RunCoordinatorError } from './run-coordinator.js';
+
+export type {
+  CoordinatedRunContext,
+  ManagedSurfaceAdapter,
+  RunCoordinatorDependencies,
+  RunCoordinatorErrorCode,
+  RunCoordinatorMode,
+  RunCoordinatorSnapshot,
+  RunCoordinatorState,
+  StartCoordinatedRunOptions,
+} from './run-coordinator.js';
