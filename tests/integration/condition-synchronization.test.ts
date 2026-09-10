@@ -193,10 +193,7 @@ describe('condition-based synchronization', () => {
             caseSensitive: true,
           },
         },
-        {
-          timeoutMs: 3000,
-          pollIntervalMs: 50,
-        },
+        waitOptions,
       );
 
       expect(details).toMatchObject({

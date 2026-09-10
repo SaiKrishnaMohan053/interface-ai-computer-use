@@ -139,12 +139,14 @@ export class PlaywrightSurface implements SurfaceAdapter<PlaywrightStrategy> {
   }
 
   /**
-   * An interrupted browser operation invalidates this adapter and closes
-   * its page to prevent continued execution.
-   *
-   * This is terminal cancellation, not a human-handoff pause.
+   * Mutating operations poison the surface if interrupted.
+   * Read-only observations and condition checks only expire.
    */
-  private async bounded<T>(options: SurfaceOperationOptions, work: () => Promise<T>): Promise<T> {
+  private async bounded<T>(
+    options: SurfaceOperationOptions,
+    work: () => Promise<T>,
+    mutating = false,
+  ): Promise<T> {
     positive(options.timeoutMs);
 
     if (options.signal?.aborted) {
@@ -156,20 +158,42 @@ export class PlaywrightSurface implements SurfaceAdapter<PlaywrightStrategy> {
     }
 
     let timer: ReturnType<typeof setTimeout> | undefined;
-    let abort = () => {};
+
+    let cancel = () => {};
 
     const stopped = new Promise<never>((_, reject) => {
-      abort = () => {
-        this.poisoned = true;
+      const interrupt = (timedOut: boolean) => {
         this.invalidate();
 
-        void this.page.close({ runBeforeUnload: false }).catch(() => undefined);
+        if (mutating) {
+          this.poisoned = true;
 
-        reject(new Fault('SURFACE_UNAVAILABLE', 'Operation interrupted; page invalidated'));
+          void this.page
+            .close({
+              runBeforeUnload: false,
+            })
+            .catch(() => undefined);
+        }
+
+        reject(
+          new Fault(
+            timedOut && !mutating ? 'CONDITION_TIMEOUT' : 'SURFACE_UNAVAILABLE',
+            timedOut
+              ? mutating
+                ? 'Operation timed out; page invalidated'
+                : 'Read-only operation timed out'
+              : mutating
+                ? 'Operation cancelled; page invalidated'
+                : 'Read-only operation cancelled',
+          ),
+        );
       };
 
-      timer = setTimeout(abort, options.timeoutMs);
-      options.signal?.addEventListener('abort', abort, {
+      cancel = () => interrupt(false);
+
+      timer = setTimeout(() => interrupt(true), options.timeoutMs);
+
+      options.signal?.addEventListener('abort', cancel, {
         once: true,
       });
     });
@@ -178,7 +202,8 @@ export class PlaywrightSurface implements SurfaceAdapter<PlaywrightStrategy> {
       return await Promise.race([work(), stopped]);
     } finally {
       clearTimeout(timer);
-      options.signal?.removeEventListener('abort', abort);
+
+      options.signal?.removeEventListener('abort', cancel);
     }
   }
 
@@ -388,119 +413,127 @@ export class PlaywrightSurface implements SurfaceAdapter<PlaywrightStrategy> {
     let acquired = false;
 
     try {
-      const output = await this.bounded(options, () =>
-        this.interruptOnDialog(
-          async (): Promise<Extract<ActionResult, { status: 'success' }>['output']> => {
-            if (this.busy) {
-              throw new Fault('SURFACE_UNAVAILABLE', 'An action is in progress');
-            }
-
-            this.busy = true;
-            acquired = true;
-
-            const action = request.action;
-
-            if (
-              this.pending.size &&
-              !(action.kind === 'dismiss' && action.dialog.kind === 'native')
-            ) {
-              throw new Fault('ACTION_FAILED', 'Pending native dialog requires explicit handling');
-            }
-
-            const budget = {
-              timeout: Math.max(1, options.timeoutMs - (Date.now() - start)),
-            };
-
-            if (action.kind === 'navigate') {
-              const url = new URL(action.destination);
-
-              if (!['http:', 'https:'].includes(url.protocol)) {
-                throw new Fault('UNSUPPORTED_OPERATION', 'Only HTTP navigation is supported');
+      const output = await this.bounded(
+        options,
+        () =>
+          this.interruptOnDialog(
+            async (): Promise<Extract<ActionResult, { status: 'success' }>['output']> => {
+              if (this.busy) {
+                throw new Fault('SURFACE_UNAVAILABLE', 'An action is in progress');
               }
 
-              try {
-                await this.page.goto(url.href, {
-                  ...budget,
-                  waitUntil: 'domcontentloaded',
-                });
-              } catch {
-                throw new Fault('NAVIGATION_FAILED', 'Navigation did not complete');
+              this.busy = true;
+              acquired = true;
+
+              const action = request.action;
+
+              if (
+                this.pending.size &&
+                !(action.kind === 'dismiss' && action.dialog.kind === 'native')
+              ) {
+                throw new Fault(
+                  'ACTION_FAILED',
+                  'Pending native dialog requires explicit handling',
+                );
               }
-            } else if (action.kind === 'dismiss') {
-              if (action.dialog.kind === 'native') {
-                this.current(action.dialog.observationId);
 
-                const pending = this.pending.get(action.dialog.dialogId);
+              const budget = {
+                timeout: Math.max(1, options.timeoutMs - (Date.now() - start)),
+              };
 
-                if (!pending) {
-                  throw new Fault('STALE_TARGET', 'Dialog no longer exists');
+              if (action.kind === 'navigate') {
+                const url = new URL(action.destination);
+
+                if (!['http:', 'https:'].includes(url.protocol)) {
+                  throw new Fault('UNSUPPORTED_OPERATION', 'Only HTTP navigation is supported');
                 }
 
-                if (action.dialog.response.kind === 'accept') {
-                  await pending.dialog.accept(action.dialog.response.promptText);
-                } else {
-                  await pending.dialog.dismiss();
+                try {
+                  await this.page.goto(url.href, {
+                    ...budget,
+                    waitUntil: 'domcontentloaded',
+                  });
+                } catch {
+                  throw new Fault('NAVIGATION_FAILED', 'Navigation did not complete');
                 }
+              } else if (action.kind === 'dismiss') {
+                if (action.dialog.kind === 'native') {
+                  this.current(action.dialog.observationId);
 
-                this.pending.delete(action.dialog.dialogId);
-              } else {
-                await (await this.element(action.dialog.target)).click(budget);
-              }
-            } else {
-              const el = await this.element(action.target);
+                  const pending = this.pending.get(action.dialog.dialogId);
 
-              switch (action.kind) {
-                case 'click':
-                  await el.click(budget);
-                  break;
+                  if (!pending) {
+                    throw new Fault('STALE_TARGET', 'Dialog no longer exists');
+                  }
 
-                case 'type':
-                  if (action.mode === 'replace') {
-                    await el.fill(action.text, budget);
+                  if (action.dialog.response.kind === 'accept') {
+                    await pending.dialog.accept(action.dialog.response.promptText);
                   } else {
-                    await el.focus();
-                    await el.press('ControlOrMeta+End', budget);
-                    await el.type(action.text, budget);
-                  }
-                  break;
-
-                case 'select':
-                  await el.selectOption(
-                    action.option.kind === 'label'
-                      ? { label: action.option.label }
-                      : { value: action.option.value },
-                    budget,
-                  );
-                  break;
-
-                case 'check':
-                  await el.check(budget);
-                  break;
-
-                case 'uncheck':
-                  await el.uncheck(budget);
-                  break;
-
-                case 'read':
-                  if (!(await el.isVisible())) {
-                    throw new Fault('ACTION_FAILED', 'Read target is not visible');
+                    await pending.dialog.dismiss();
                   }
 
-                  return {
-                    kind: 'read',
-                    source: action.source,
-                    value:
-                      action.source === 'text' ? await el.innerText() : await el.inputValue(budget),
-                  };
+                  this.pending.delete(action.dialog.dialogId);
+                } else {
+                  await (await this.element(action.dialog.target)).click(budget);
+                }
+              } else {
+                const el = await this.element(action.target);
 
-                default:
-                  throw new Fault('UNSUPPORTED_OPERATION', 'Unknown action');
+                switch (action.kind) {
+                  case 'click':
+                    await el.click(budget);
+                    break;
+
+                  case 'type':
+                    if (action.mode === 'replace') {
+                      await el.fill(action.text, budget);
+                    } else {
+                      await el.focus();
+                      await el.press('ControlOrMeta+End', budget);
+                      await el.type(action.text, budget);
+                    }
+                    break;
+
+                  case 'select':
+                    await el.selectOption(
+                      action.option.kind === 'label'
+                        ? { label: action.option.label }
+                        : { value: action.option.value },
+                      budget,
+                    );
+                    break;
+
+                  case 'check':
+                    await el.check(budget);
+                    break;
+
+                  case 'uncheck':
+                    await el.uncheck(budget);
+                    break;
+
+                  case 'read':
+                    if (!(await el.isVisible())) {
+                      throw new Fault('ACTION_FAILED', 'Read target is not visible');
+                    }
+
+                    return {
+                      kind: 'read',
+                      source: action.source,
+                      value:
+                        action.source === 'text'
+                          ? await el.innerText()
+                          : await el.inputValue(budget),
+                    };
+
+                  default:
+                    throw new Fault('UNSUPPORTED_OPERATION', 'Unknown action');
+                }
               }
-            }
 
-            return { kind: 'none' };
-          },
-        ),
+              return { kind: 'none' };
+            },
+          ),
+        true,
       );
 
       return {
@@ -701,6 +734,15 @@ export class PlaywrightSurface implements SurfaceAdapter<PlaywrightStrategy> {
         reason: 'timeout',
       };
     } catch (error) {
+      if (error instanceof Fault && error.code === 'CONDITION_TIMEOUT') {
+        return {
+          ...base(),
+          status: 'not_met',
+          passed: false,
+          reason: 'timeout',
+        };
+      }
+
       return {
         ...base(),
         status: 'error',
