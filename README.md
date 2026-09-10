@@ -36,3 +36,11 @@ After cloning:
 npm ci
 npx playwright install chromium
 ```
+
+## Development commands
+
+Start the local demo banking surface and keep it running:
+
+```sh
+npm run dev
+```
