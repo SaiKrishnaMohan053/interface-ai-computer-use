@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { Dialog, ElementHandle, Locator, Page } from 'playwright';
+import type { Dialog, ElementHandle, Page } from 'playwright';
 
 import type {
   ActionExecutionRequest,
@@ -29,28 +29,11 @@ import type {
 
 import { collect } from './collect.js';
 
-/**
- * Initial single-strategy adapter inputs.
- * Ordered fallback belongs to the later Target Resolver.
- */
-export type PlaywrightStrategy =
-  | {
-      kind: 'role';
-      role: Parameters<Page['getByRole']>[0];
-      name: string;
-    }
-  | {
-      kind: 'label';
-      text: string;
-    }
-  | {
-      kind: 'text';
-      text: string;
-    }
-  | {
-      kind: 'css';
-      selector: string;
-    };
+import { resolvePlaywrightStrategy } from './resolve-strategy.js';
+
+import type { PlaywrightStrategy } from './resolve-strategy.js';
+
+export type { PlaywrightStrategy } from './resolve-strategy.js';
 
 class Fault extends Error {
   constructor(
@@ -270,32 +253,6 @@ export class PlaywrightSurface implements SurfaceAdapter<PlaywrightStrategy> {
     }
   }
 
-  private locator(strategy: PlaywrightStrategy): Locator {
-    switch (strategy.kind) {
-      case 'role':
-        return this.page.getByRole(strategy.role, {
-          name: strategy.name,
-          exact: true,
-        });
-
-      case 'label':
-        return this.page.getByLabel(strategy.text, {
-          exact: true,
-        });
-
-      case 'text':
-        return this.page.getByText(strategy.text, {
-          exact: true,
-        });
-
-      case 'css':
-        return this.page.locator(strategy.selector);
-
-      default:
-        throw new Fault('UNSUPPORTED_OPERATION', 'Unknown strategy');
-    }
-  }
-
   private current(id: string): void {
     if (!id || id !== this.observationId) {
       throw new Fault('STALE_TARGET', 'Observation is stale');
@@ -314,8 +271,9 @@ export class PlaywrightSurface implements SurfaceAdapter<PlaywrightStrategy> {
           throw new Fault('SURFACE_UNAVAILABLE', 'Surface is blocked');
         }
 
-        const locator = this.locator(request.strategy);
-        const count = await locator.count();
+        const elements = await resolvePlaywrightStrategy(this.page, request.strategy);
+
+        const count = elements.length;
 
         if (!count) {
           return {
@@ -325,15 +283,15 @@ export class PlaywrightSurface implements SurfaceAdapter<PlaywrightStrategy> {
         }
 
         if (count !== 1) {
+          await Promise.all(elements.map((element) => element.dispose()));
+
           return {
             status: 'ambiguous',
             matchCount: count,
           };
         }
 
-        const element = await locator.elementHandle({
-          timeout: options.timeoutMs,
-        });
+        const element = elements[0];
 
         if (!element) {
           return {
