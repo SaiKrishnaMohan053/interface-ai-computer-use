@@ -16,3 +16,21 @@ export type {
   SurfaceScope,
   Timestamp,
 } from './contracts.js';
+
+export type {
+  ActionExecutionRequest,
+  CapturedEvidence,
+  ConditionEvaluationRequest,
+  ConditionPreparationResult,
+  ConditionTarget,
+  EvidenceCaptureRequest,
+  EvidenceCaptureResult,
+  ExecutableSurfaceAction,
+  NativeDialogObservation,
+  ObservationOptions,
+  ObservationResult,
+  SurfaceAdapter,
+  SurfaceOperationOptions,
+  TargetResolutionRequest,
+  TargetResolutionResult,
+} from './adapter.js';
