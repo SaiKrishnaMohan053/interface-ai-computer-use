@@ -100,6 +100,8 @@ class FakeSurface implements SurfaceAdapter<TargetStrategy> {
 
   currentUrl = ENTRY_URL;
   resolution: 'resolved' | 'ambiguous' | 'not_found' = 'resolved';
+  readonly resolutionOutcomes: Array<'resolved' | 'ambiguous' | 'not_found'> = [];
+  readonly resolutionRequests: TargetResolutionRequest<TargetStrategy>[] = [];
   readonly performed: ActionExecutionRequest[] = [];
 
   observe(options: ObservationOptions): Promise<ObservationResult> {
@@ -115,11 +117,15 @@ class FakeSurface implements SurfaceAdapter<TargetStrategy> {
     options: SurfaceOperationOptions,
   ): Promise<TargetResolutionResult> {
     void options;
-    if (this.resolution === 'ambiguous') {
+    this.resolutionRequests.push(request);
+
+    const resolution = this.resolutionOutcomes.shift() ?? this.resolution;
+
+    if (resolution === 'ambiguous') {
       return Promise.resolve({ status: 'ambiguous', matchCount: 2 });
     }
 
-    if (this.resolution === 'not_found') {
+    if (resolution === 'not_found') {
       return Promise.resolve({ status: 'not_found', matchCount: 0 });
     }
 
@@ -510,5 +516,146 @@ describe('DiscoveryEngine', () => {
       destination: ENTRY_URL,
     });
     expect(surface.currentUrl).toBe(ENTRY_URL);
+  });
+
+  it('falls back across zero, multiple, then exactly-one matches before execution', async () => {
+    const surface = new FakeSurface();
+    surface.resolutionOutcomes.push('not_found', 'ambiguous', 'resolved');
+
+    const fallbackTarget = {
+      description: 'View member details',
+      strategies: [
+        {
+          kind: 'role-name' as const,
+          role: 'button',
+          name: { value: 'View details', mode: 'exact' as const, caseSensitive: false },
+        },
+        {
+          kind: 'label' as const,
+          label: { value: 'View details', mode: 'exact' as const, caseSensitive: false },
+        },
+        {
+          kind: 'text' as const,
+          text: { value: 'View details', mode: 'exact' as const, caseSensitive: false },
+        },
+      ],
+      cardinality: 'exactly-one' as const,
+    };
+
+    const fixture = engine(
+      [
+        {
+          kind: 'click',
+          target: fallbackTarget,
+          reason: 'Open the uniquely resolved member details',
+        },
+        {
+          kind: 'escalate',
+          reasonCode: 'AUTOMATION_STUCK',
+          reason: 'Stop after verifying target resolution',
+        },
+      ],
+      { surface },
+    );
+
+    await fixture.discovery.run(request());
+
+    expect(surface.resolutionRequests.map((entry) => entry.strategyIndex)).toEqual([0, 1, 2]);
+    expect(surface.performed).toHaveLength(1);
+    expect(surface.performed[0]?.action).toMatchObject({
+      kind: 'click',
+      target: {
+        cardinality: 'exactly-one',
+        matchedStrategyIndex: 2,
+      },
+    });
+  });
+
+  it('tries every strategy and escalates safely when all matches are ambiguous', async () => {
+    const surface = new FakeSurface();
+    surface.resolution = 'ambiguous';
+
+    const fixture = engine(
+      [
+        {
+          kind: 'click',
+          target: {
+            description: 'View member details',
+            strategies: [
+              {
+                kind: 'role-name',
+                role: 'button',
+                name: { value: 'View', mode: 'exact', caseSensitive: false },
+              },
+              {
+                kind: 'text',
+                text: { value: 'View', mode: 'exact', caseSensitive: false },
+              },
+            ],
+            cardinality: 'exactly-one',
+          },
+          reason: 'Open member details',
+        },
+      ],
+      { surface },
+    );
+
+    await expect(fixture.discovery.run(request())).resolves.toMatchObject({
+      status: 'intervention_required',
+      intervention: {
+        code: 'AUTOMATION_STUCK',
+        context: {
+          source: 'unsafe_ambiguity',
+          resolutionAttempts: 2,
+        },
+      },
+    });
+
+    expect(surface.resolutionRequests.map((entry) => entry.strategyIndex)).toEqual([0, 1]);
+    expect(surface.performed).toHaveLength(0);
+  });
+
+  it('does not execute when every targeting strategy returns zero matches', async () => {
+    const surface = new FakeSurface();
+    surface.resolution = 'not_found';
+
+    const fixture = engine(
+      [
+        {
+          kind: 'click',
+          target: {
+            description: 'View member details',
+            strategies: [
+              {
+                kind: 'role-name',
+                role: 'button',
+                name: { value: 'View', mode: 'exact', caseSensitive: false },
+              },
+              {
+                kind: 'text',
+                text: { value: 'View', mode: 'exact', caseSensitive: false },
+              },
+            ],
+            cardinality: 'exactly-one',
+          },
+          reason: 'Open member details',
+        },
+        {
+          kind: 'escalate',
+          reasonCode: 'AUTOMATION_STUCK',
+          reason: 'No unique target was available',
+        },
+      ],
+      { surface },
+    );
+
+    await fixture.discovery.run(request());
+
+    expect(surface.resolutionRequests.map((entry) => entry.strategyIndex)).toEqual([0, 1]);
+    expect(surface.performed).toHaveLength(0);
+    expect(fixture.model.inputs[1]?.observation.recentError).toMatchObject({
+      code: 'TARGET_NOT_FOUND',
+      recoverable: true,
+    });
   });
 });
