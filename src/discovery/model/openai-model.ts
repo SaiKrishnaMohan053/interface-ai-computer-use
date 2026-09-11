@@ -14,6 +14,11 @@ import type { DiscoveryDecision } from '../decision.js';
 
 import type { DiscoveryDecisionModel, DiscoveryModelInput } from './discovery-decision-model.js';
 
+import {
+  loadOpenAIDiscoveryModelConfig,
+  validateOpenAIDiscoveryModelConfig,
+} from './model-config.js';
+
 import type { OpenAIDiscoveryModelConfig } from './model-config.js';
 
 const openAIWireDecisionSchema = z
@@ -102,6 +107,7 @@ function createDefaultTransport(config: OpenAIDiscoveryModelConfig): OpenAIDecis
   return async (request: OpenAIDecisionTransportRequest): Promise<unknown> => {
     const response = await client.responses.parse({
       model: request.model,
+      max_output_tokens: config.maxOutputTokens,
 
       input: [
         {
@@ -166,13 +172,13 @@ function convertWireResponse(response: OpenAIWireResponse): DiscoveryDecision {
 }
 
 export class OpenAIDiscoveryDecisionModel implements DiscoveryDecisionModel {
+  private readonly config: OpenAIDiscoveryModelConfig;
   private readonly transport: OpenAIDecisionTransport;
 
-  constructor(
-    private readonly config: OpenAIDiscoveryModelConfig,
-    transport?: OpenAIDecisionTransport,
-  ) {
-    this.transport = transport ?? createDefaultTransport(config);
+  constructor(config: OpenAIDiscoveryModelConfig, transport?: OpenAIDecisionTransport) {
+    this.config = validateOpenAIDiscoveryModelConfig(config);
+
+    this.transport = transport ?? createDefaultTransport(this.config);
   }
 
   async decide(input: DiscoveryModelInput): Promise<DiscoveryDecision> {
@@ -197,4 +203,12 @@ export class OpenAIDiscoveryDecisionModel implements DiscoveryDecisionModel {
 
     return convertWireResponse(wireResponse.data);
   }
+}
+
+export function createOpenAIDiscoveryDecisionModelFromEnvironment(
+  environment: NodeJS.ProcessEnv = process.env,
+): OpenAIDiscoveryDecisionModel {
+  const config = loadOpenAIDiscoveryModelConfig(environment);
+
+  return new OpenAIDiscoveryDecisionModel(config);
 }

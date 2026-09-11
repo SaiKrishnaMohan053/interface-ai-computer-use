@@ -56,9 +56,10 @@ const observation = parseAgentObservation({
 
 const config: OpenAIDiscoveryModelConfig = {
   apiKey: 'test-key-never-sent-to-transport',
-  model: 'structured-output-test-model',
+  model: 'gpt-4.1-mini',
   timeoutMs: 30_000,
   maxRetries: 2,
+  maxOutputTokens: 4_096,
 };
 
 describe('OpenAI discovery model configuration', () => {
@@ -66,15 +67,17 @@ describe('OpenAI discovery model configuration', () => {
     expect(
       loadOpenAIDiscoveryModelConfig({
         OPENAI_API_KEY: 'test-api-key',
-        OPENAI_MODEL: 'test-model',
+        OPENAI_MODEL: 'gpt-4.1-mini',
         OPENAI_TIMEOUT_MS: '45000',
         OPENAI_MAX_RETRIES: '3',
+        OPENAI_MAX_OUTPUT_TOKENS: '8192',
       }),
     ).toEqual({
       apiKey: 'test-api-key',
-      model: 'test-model',
+      model: 'gpt-4.1-mini',
       timeoutMs: 45_000,
       maxRetries: 3,
+      maxOutputTokens: 8_192,
     });
   });
 
@@ -82,13 +85,14 @@ describe('OpenAI discovery model configuration', () => {
     expect(
       loadOpenAIDiscoveryModelConfig({
         OPENAI_API_KEY: 'test-api-key',
-        OPENAI_MODEL: 'test-model',
+        OPENAI_MODEL: 'gpt-4.1-mini',
       }),
     ).toEqual({
       apiKey: 'test-api-key',
-      model: 'test-model',
+      model: 'gpt-4.1-mini',
       timeoutMs: 30_000,
       maxRetries: 2,
+      maxOutputTokens: 4_096,
     });
   });
 
@@ -103,11 +107,11 @@ describe('OpenAI discovery model configuration', () => {
     ).toThrow();
   });
 
-  it('rejects invalid retry and timeout settings', () => {
+  it('rejects invalid retry, timeout, and output-token settings', () => {
     expect(() =>
       loadOpenAIDiscoveryModelConfig({
         OPENAI_API_KEY: 'test-api-key',
-        OPENAI_MODEL: 'test-model',
+        OPENAI_MODEL: 'gpt-4.1-mini',
         OPENAI_TIMEOUT_MS: '-1',
       }),
     ).toThrow();
@@ -115,8 +119,16 @@ describe('OpenAI discovery model configuration', () => {
     expect(() =>
       loadOpenAIDiscoveryModelConfig({
         OPENAI_API_KEY: 'test-api-key',
-        OPENAI_MODEL: 'test-model',
+        OPENAI_MODEL: 'gpt-4.1-mini',
         OPENAI_MAX_RETRIES: '100',
+      }),
+    ).toThrow();
+
+    expect(() =>
+      loadOpenAIDiscoveryModelConfig({
+        OPENAI_API_KEY: 'test-api-key',
+        OPENAI_MODEL: 'gpt-4.1-mini',
+        OPENAI_MAX_OUTPUT_TOKENS: '100',
       }),
     ).toThrow();
   });
@@ -125,7 +137,7 @@ describe('OpenAI discovery model configuration', () => {
 describe('DiscoveryDecisionModel abstraction', () => {
   it('supports a deterministic fake without OpenAI', async () => {
     class DeterministicFakeModel implements DiscoveryDecisionModel {
-      async decide(input: DiscoveryModelInput): Promise<{
+      decide(input: DiscoveryModelInput): Promise<{
         kind: 'complete';
         summary: string;
         outputs: Record<string, string>;
@@ -190,7 +202,7 @@ describe('OpenAIDiscoveryDecisionModel', () => {
       },
     });
 
-    expect(received?.model).toBe('structured-output-test-model');
+    expect(received?.model).toBe('gpt-4.1-mini');
     expect(received?.observationJson).toContain('$12,840.50');
     expect(received?.systemPrompt).toContain('Do not invent controls');
 
