@@ -15,6 +15,19 @@ export type DiscoveryStepOutcome =
   | 'completed'
   | 'escalated';
 
+/**
+ * Provenance for a value obtained through a successful
+ * surface read during the active discovery run.
+ */
+export interface DiscoveryExtractionRecord {
+  readonly outputName: string;
+  readonly value: JsonValue;
+  readonly source: 'surface_read';
+  readonly step: number;
+  readonly observationId: string;
+  readonly actionId: string;
+}
+
 export interface DiscoveryStepRecord {
   readonly step: number;
   readonly observationId: string;
@@ -38,7 +51,19 @@ export interface DiscoveryRunState {
   step: number;
   lastObservationFingerprint: string | null;
   repeatedStateCount: number;
+
+  /**
+   * Values available to subsequent model decisions and
+   * final discovery output.
+   */
   extractedValues: Record<string, JsonValue>;
+
+  /**
+   * Read provenance used to reject unsupported
+   * completion claims.
+   */
+  extractions: DiscoveryExtractionRecord[];
+
   recentSteps: DiscoveryStepRecord[];
 }
 

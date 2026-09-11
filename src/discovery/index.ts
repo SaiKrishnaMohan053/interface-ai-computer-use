@@ -37,8 +37,18 @@ export type {
 } from './decision.js';
 
 export type {
+  DiscoveryExtractionRecord,
   DiscoveryResult,
   DiscoveryRunState,
   DiscoveryStepOutcome,
   DiscoveryStepRecord,
 } from './run-state.js';
+
+export { COMPLETION_REJECTION_CODES, verifyDiscoveryCompletion } from './completion-verifier.js';
+
+export type {
+  CompletionEvidenceState,
+  CompletionRejectionCode,
+  CompletionVerificationIssue,
+  CompletionVerificationResult,
+} from './completion-verifier.js';
