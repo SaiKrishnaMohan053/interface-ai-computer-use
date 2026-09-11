@@ -65,3 +65,4 @@ export type {
 } from './escalation.js';
 
 export * from './agent-observation.js';
+export * from './observation-projector.js';
