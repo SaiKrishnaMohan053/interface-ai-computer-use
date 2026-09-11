@@ -63,3 +63,5 @@ export type {
   HumanPolicyDecision,
   ModelEscalationDecision,
 } from './escalation.js';
+
+export * from './agent-observation.js';
