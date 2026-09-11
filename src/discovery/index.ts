@@ -69,6 +69,26 @@ export * from './observation-projector.js';
 export * from './model/index.js';
 
 export {
+  TRANSLATABLE_DISCOVERY_DECISION_KINDS,
+  DiscoveryActionTranslationError,
+  getDiscoveryDecisionTarget,
+  translateDiscoveryDecision,
+} from './action-translator.js';
+
+export type {
+  DiscoveryActionTranslationErrorCode,
+  DiscoveryActionTranslationInput,
+  TranslatableDiscoveryDecision,
+} from './action-translator.js';
+
+export { evaluateDiscoveryActionPolicy } from './discovery-policy-gate.js';
+
+export type {
+  ActionableDiscoveryDecision,
+  DiscoveryPolicyEvaluation,
+} from './discovery-policy-gate.js';
+
+export {
   DEFAULT_DISCOVERY_CONDITION_POLL_INTERVAL_MS,
   DEFAULT_DISCOVERY_MAX_REPEATED_STATES,
   DEFAULT_DISCOVERY_OPERATION_TIMEOUT_MS,
@@ -81,16 +101,3 @@ export type {
   DiscoveryEngineOptions,
   DiscoveryRunOptions,
 } from './discovery-engine.js';
-
-export {
-  TRANSLATABLE_DISCOVERY_DECISION_KINDS,
-  DiscoveryActionTranslationError,
-  getDiscoveryDecisionTarget,
-  translateDiscoveryDecision,
-} from './action-translator.js';
-
-export type {
-  DiscoveryActionTranslationErrorCode,
-  DiscoveryActionTranslationInput,
-  TranslatableDiscoveryDecision,
-} from './action-translator.js';

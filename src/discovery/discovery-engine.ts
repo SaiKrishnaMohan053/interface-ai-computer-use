@@ -1,7 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 
 import { ConditionEvaluator } from '../conditions/index.js';
-import type { PolicyActionKind } from '../policy/index.js';
 import { parseRuntimeResult } from '../runtime/index.js';
 import type {
   CoordinatedRunContext,
@@ -10,7 +9,6 @@ import type {
 } from '../runtime/index.js';
 import type {
   ActionResult,
-  ExecutableSurfaceAction,
   JsonValue,
   ResolvedTarget,
   SurfaceFailure,
@@ -25,10 +23,13 @@ import type {
   AgentError,
   AgentObservation,
 } from './agent-observation.js';
+import { getDiscoveryDecisionTarget, translateDiscoveryDecision } from './action-translator.js';
+import type { TranslatableDiscoveryDecision } from './action-translator.js';
+import { evaluateDiscoveryActionPolicy } from './discovery-policy-gate.js';
 import { verifyDiscoveryCompletion } from './completion-verifier.js';
 import { parseDiscoveryRequest, resolveDiscoveryRunConfig } from './contracts.js';
 import { parseDiscoveryDecision } from './decision.js';
-import type { AgentTargetSpec, DiscoveryDecision } from './decision.js';
+import type { DiscoveryDecision } from './decision.js';
 import { createDiscoveryIntervention } from './escalation.js';
 import type { DiscoveryIntervention } from './escalation.js';
 import { createDiscoveryModelInput } from './model/index.js';
@@ -45,7 +46,6 @@ const RECENT_LIMIT = 5;
 
 type DiscoveryContext = CoordinatedRunContext<TargetStrategy>;
 type NonTerminalDecision = Exclude<DiscoveryDecision, { readonly kind: 'complete' | 'escalate' }>;
-type ExecutableDecision = Exclude<NonTerminalDecision, { readonly kind: 'wait' }>;
 
 interface RuntimeFailureInput {
   readonly code: RuntimeFailureCode;
@@ -157,80 +157,7 @@ function mapSurfaceFailure(error: SurfaceFailure): RuntimeFailureInput {
   };
 }
 
-function decisionTarget(decision: ExecutableDecision): AgentTargetSpec | null {
-  if (decision.kind === 'navigate') {
-    return null;
-  }
-
-  if (decision.kind === 'dismiss') {
-    return decision.dialog.kind === 'surface' ? decision.dialog.target : null;
-  }
-
-  return decision.target;
-}
-
-function nativeDismissAction(
-  decision: Extract<ExecutableDecision, { readonly kind: 'dismiss' }>,
-): ExecutableSurfaceAction | null {
-  if (decision.dialog.kind !== 'native') {
-    return null;
-  }
-
-  const response =
-    decision.dialog.response.kind === 'dismiss'
-      ? { kind: 'dismiss' as const }
-      : decision.dialog.response.promptText === undefined
-        ? { kind: 'accept' as const }
-        : {
-            kind: 'accept' as const,
-            promptText: decision.dialog.response.promptText,
-          };
-
-  return {
-    kind: 'dismiss',
-    dialog: {
-      kind: 'native',
-      observationId: decision.dialog.observationId,
-      dialogId: decision.dialog.dialogId,
-      response,
-    },
-  };
-}
-
-function executableAction(
-  decision: ExecutableDecision,
-  target: ResolvedTarget | null,
-): ExecutableSurfaceAction {
-  if (decision.kind === 'navigate') {
-    return { kind: 'navigate', destination: decision.destination };
-  }
-
-  if (decision.kind === 'dismiss') {
-    const native = nativeDismissAction(decision);
-    if (native !== null) return native;
-    if (target === null) throw new Error('Surface dismissal requires a resolved target');
-    return { kind: 'dismiss', dialog: { kind: 'surface', target } };
-  }
-
-  if (target === null) throw new Error(`${decision.kind} requires a resolved target`);
-
-  switch (decision.kind) {
-    case 'click':
-      return { kind: 'click', target };
-    case 'type':
-      return { kind: 'type', target, text: decision.text, mode: decision.mode };
-    case 'select':
-      return { kind: 'select', target, option: decision.option };
-    case 'check':
-      return { kind: 'check', target };
-    case 'uncheck':
-      return { kind: 'uncheck', target };
-    case 'read':
-      return { kind: 'read', target, source: decision.source };
-  }
-}
-
-function actionSummary(decision: ExecutableDecision): string {
+function actionSummary(decision: TranslatableDiscoveryDecision): string {
   if (decision.kind === 'navigate') return `navigate to ${decision.destination}`;
   if (decision.kind === 'dismiss') {
     return decision.dialog.kind === 'native'
@@ -604,14 +531,12 @@ export class DiscoveryEngine {
     decision: NonTerminalDecision,
     signal: AbortSignal | undefined,
   ): Promise<DiscoveryResult | null> {
-    const actionKind: PolicyActionKind = decision.kind;
-    const url =
-      decision.kind === 'navigate'
-        ? decision.destination
-        : observation.location.kind === 'web'
-          ? observation.location.url
-          : '';
-    const policy = context.policyEngine.evaluate({ url, action: { kind: actionKind } });
+    const evaluation = evaluateDiscoveryActionPolicy({
+      policyEngine: context.policyEngine,
+      observation,
+      decision,
+    });
+    const { actionKind, decision: policy } = evaluation;
 
     await context.evidenceRecorder.recordEvent({
       step: state.step,
@@ -696,7 +621,7 @@ export class DiscoveryEngine {
       return null;
     }
 
-    const targetSpec = decisionTarget(decision);
+    const targetSpec = getDiscoveryDecisionTarget(decision);
     let target: ResolvedTarget | null = null;
 
     if (targetSpec !== null) {
@@ -737,7 +662,13 @@ export class DiscoveryEngine {
     }
 
     const result = await context.surface.perform(
-      { actionId: this.createId(), action: executableAction(decision, target) },
+      {
+        actionId: this.createId(),
+        action: translateDiscoveryDecision({
+          decision,
+          resolvedTarget: target,
+        }),
+      },
       this.operationOptions(state, signal),
     );
     await context.evidenceRecorder.recordEvent({
@@ -756,7 +687,7 @@ export class DiscoveryEngine {
     state: DiscoveryRunState,
     memory: WorkingMemory,
     observation: AgentObservation,
-    decision: ExecutableDecision,
+    decision: TranslatableDiscoveryDecision,
     result: ActionResult,
   ): void {
     if (result.status === 'failure') {
@@ -810,7 +741,7 @@ export class DiscoveryEngine {
     state: DiscoveryRunState,
     memory: WorkingMemory,
     observation: AgentObservation,
-    decision: ExecutableDecision,
+    decision: TranslatableDiscoveryDecision,
     error: SurfaceFailure,
   ): void {
     const summary = `${actionSummary(decision)} failed: ${error.message}`;
