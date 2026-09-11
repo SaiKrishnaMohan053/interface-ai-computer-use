@@ -2,6 +2,8 @@ import type { PolicyActionKind, PolicyDecision, PolicyEngine } from '../policy/i
 
 import type { AgentObservation } from './agent-observation.js';
 import type { DiscoveryDecision } from './decision.js';
+import { classifyDiscoveryDecisionRisk } from './discovery-risk-classifier.js';
+import type { DiscoveryRiskClassification } from './discovery-risk-classifier.js';
 
 export type ActionableDiscoveryDecision = Exclude<
   DiscoveryDecision,
@@ -11,6 +13,7 @@ export type ActionableDiscoveryDecision = Exclude<
 export interface DiscoveryPolicyEvaluation {
   readonly actionKind: PolicyActionKind;
   readonly policyUrl: string;
+  readonly risk: DiscoveryRiskClassification;
   readonly decision: PolicyDecision;
 }
 
@@ -24,6 +27,7 @@ export function evaluateDiscoveryActionPolicy(input: {
   readonly decision: ActionableDiscoveryDecision;
 }): DiscoveryPolicyEvaluation {
   const actionKind: PolicyActionKind = input.decision.kind;
+  const risk = classifyDiscoveryDecisionRisk(input.decision);
   const policyUrl =
     input.decision.kind === 'navigate'
       ? input.decision.destination
@@ -34,9 +38,11 @@ export function evaluateDiscoveryActionPolicy(input: {
   return Object.freeze({
     actionKind,
     policyUrl,
+    risk,
     decision: input.policyEngine.evaluate({
       url: policyUrl,
       action: { kind: actionKind },
+      systemRiskLevel: risk.riskLevel,
     }),
   });
 }

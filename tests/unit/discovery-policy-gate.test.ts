@@ -81,7 +81,7 @@ function policy(decision: PolicyDecisionKind = 'ALLOW'): PolicyEngine {
       ruleId: `${action}-rule`,
       description: `${action} is classified by trusted policy`,
       match: { actions: [action], routeIds: ['bank'] },
-      riskLevel: decision === 'ALLOW' ? 'READ_ONLY' : 'REVERSIBLE',
+      riskLevel: ['read', 'navigate', 'wait'].includes(action) ? 'READ_ONLY' : 'REVERSIBLE',
       decision,
     })),
   });
@@ -125,9 +125,21 @@ describe('Discovery policy gate', () => {
     });
 
     expect(result.actionKind).toBe(decision.kind);
+    const expectedSystemRisk = ['click', 'read', 'navigate', 'wait'].includes(decision.kind)
+      ? 'READ_ONLY'
+      : 'REVERSIBLE';
+
+    const expectedPolicyRisk = ['read', 'navigate', 'wait'].includes(decision.kind)
+      ? 'READ_ONLY'
+      : 'REVERSIBLE';
+
+    expect(result.risk).toMatchObject({
+      source: 'system',
+      riskLevel: expectedSystemRisk,
+    });
     expect(result.decision).toMatchObject({
       decision: 'ALLOW',
-      riskLevel: 'READ_ONLY',
+      riskLevel: expectedPolicyRisk,
       matchedRuleId: `${decision.kind}-rule`,
     });
   });
@@ -206,6 +218,32 @@ describe('Discovery policy gate', () => {
     expect(result.decision).toMatchObject({
       decision: 'DENY',
       code: 'POLICY_DENIED',
+    });
+  });
+
+  it('denies when configured policy under-classifies system-derived risk', () => {
+    const result = evaluateDiscoveryActionPolicy({
+      policyEngine: policy(),
+      observation: observation(),
+      decision: {
+        kind: 'click',
+        target: {
+          ...target,
+          description: 'Submit application',
+        },
+        reason: 'The model claims this is safe',
+      },
+    });
+
+    expect(result.risk).toMatchObject({
+      source: 'system',
+      riskLevel: 'IRREVERSIBLE',
+    });
+    expect(result.decision).toMatchObject({
+      decision: 'DENY',
+      code: 'POLICY_DENIED',
+      riskLevel: 'IRREVERSIBLE',
+      matchedRuleId: 'click-rule',
     });
   });
 });

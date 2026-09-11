@@ -88,6 +88,10 @@ export type {
   DiscoveryPolicyEvaluation,
 } from './discovery-policy-gate.js';
 
+export { classifyDiscoveryDecisionRisk } from './discovery-risk-classifier.js';
+
+export type { DiscoveryRiskClassification } from './discovery-risk-classifier.js';
+
 export {
   DEFAULT_DISCOVERY_CONDITION_POLL_INTERVAL_MS,
   DEFAULT_DISCOVERY_MAX_REPEATED_STATES,

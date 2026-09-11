@@ -1,4 +1,4 @@
-import { parsePolicyConfig, parsePolicyDecision } from './policy-schema.js';
+import { parsePolicyConfig, parsePolicyDecision, riskLevelSchema } from './policy-schema.js';
 
 import type {
   AllowedRoute,
@@ -15,6 +15,9 @@ export interface PolicyEvaluationRequest {
   readonly action: {
     readonly kind: unknown;
   };
+
+  /** Trusted system-derived minimum. Never populate this from a model claim. */
+  readonly systemRiskLevel?: unknown;
 }
 
 interface AllowedLocation {
@@ -58,7 +61,13 @@ export class PolicyEngine {
       return action;
     }
 
-    return this.evaluateRisk(action, location);
+    const systemRisk = this.validateSystemRisk(request.systemRiskLevel);
+
+    if (typeof systemRisk !== 'string' && systemRisk !== null) {
+      return systemRisk;
+    }
+
+    return this.evaluateRisk(action, location, systemRisk);
   }
 
   private validateLocation(value: unknown): AllowedLocation | PolicyDecision {
@@ -116,7 +125,21 @@ export class PolicyEngine {
     return value as PolicyActionKind;
   }
 
-  private evaluateRisk(action: PolicyActionKind, location: AllowedLocation): PolicyDecision {
+  private validateSystemRisk(value: unknown): RiskLevel | null | PolicyDecision {
+    if (value === undefined) {
+      return null;
+    }
+
+    const parsed = riskLevelSchema.safeParse(value);
+
+    return parsed.success ? parsed.data : this.deny('System risk classification is invalid');
+  }
+
+  private evaluateRisk(
+    action: PolicyActionKind,
+    location: AllowedLocation,
+    systemRisk: RiskLevel | null,
+  ): PolicyDecision {
     /*
      * Risk rule order is significant.
      * First matching rule wins.
@@ -132,7 +155,28 @@ export class PolicyEngine {
       return this.deny('No risk rule allowed this action');
     }
 
+    if (systemRisk !== null && this.riskRank(rule.riskLevel) < this.riskRank(systemRisk)) {
+      return this.deny(
+        `Policy rule under-classifies system-derived ${systemRisk} risk`,
+        systemRisk,
+        rule.ruleId,
+      );
+    }
+
     return this.decisionFromRule(rule);
+  }
+
+  private riskRank(riskLevel: RiskLevel): number {
+    switch (riskLevel) {
+      case 'READ_ONLY':
+        return 0;
+      case 'REVERSIBLE':
+        return 1;
+      case 'SENSITIVE_WRITE':
+        return 2;
+      case 'IRREVERSIBLE':
+        return 3;
+    }
   }
 
   private decisionFromRule(rule: RiskRule): PolicyDecision {
