@@ -141,20 +141,23 @@ export const agentDialogSchema = z.discriminatedUnion('kind', [
   agentSurfaceDialogSchema,
 ]);
 
-const executableActionKindSchema = z.enum([
+export const agentActionKindSchema = z.enum([
   'click',
   'type',
   'select',
+  'check',
+  'uncheck',
   'navigate',
-  'dismiss_dialog',
+  'read',
   'wait',
+  'dismiss',
 ]);
 
 export const agentActionOutcomeSchema = z.discriminatedUnion('status', [
   z
     .object({
       status: z.literal('success'),
-      actionKind: executableActionKindSchema,
+      actionKind: agentActionKindSchema,
       summary: z.string().max(MAX_FIELD_LENGTH),
       output: z.json().nullable(),
     })
@@ -163,7 +166,7 @@ export const agentActionOutcomeSchema = z.discriminatedUnion('status', [
   z
     .object({
       status: z.literal('failure'),
-      actionKind: executableActionKindSchema,
+      actionKind: agentActionKindSchema,
       summary: z.string().max(MAX_FIELD_LENGTH),
       errorCode: z.string().min(1).max(200),
       recoverable: z.boolean(),
@@ -232,6 +235,7 @@ export type AgentActionOutcome = z.infer<typeof agentActionOutcomeSchema>;
 export type AgentConditionOutcome = z.infer<typeof agentConditionOutcomeSchema>;
 export type AgentError = z.infer<typeof agentErrorSchema>;
 export type AgentObservation = z.infer<typeof agentObservationSchema>;
+export type AgentActionKind = z.infer<typeof agentActionKindSchema>;
 
 export function parseAgentObservation(value: unknown): AgentObservation {
   return agentObservationSchema.parse(value);

@@ -1,0 +1,949 @@
+import { createHash, randomUUID } from 'node:crypto';
+
+import { ConditionEvaluator } from '../conditions/index.js';
+import type { PolicyActionKind } from '../policy/index.js';
+import { parseRuntimeResult } from '../runtime/index.js';
+import type {
+  CoordinatedRunContext,
+  RunCoordinator,
+  RuntimeFailureCode,
+} from '../runtime/index.js';
+import type {
+  ActionResult,
+  ExecutableSurfaceAction,
+  JsonValue,
+  ResolvedTarget,
+  SurfaceFailure,
+  SurfaceObservation,
+} from '../surface/index.js';
+import { TargetResolver } from '../targeting/index.js';
+import type { TargetStrategy } from '../targeting/index.js';
+
+import type {
+  AgentActionOutcome,
+  AgentConditionOutcome,
+  AgentError,
+  AgentObservation,
+} from './agent-observation.js';
+import { verifyDiscoveryCompletion } from './completion-verifier.js';
+import { parseDiscoveryRequest, resolveDiscoveryRunConfig } from './contracts.js';
+import { parseDiscoveryDecision } from './decision.js';
+import type { AgentTargetSpec, DiscoveryDecision } from './decision.js';
+import { createDiscoveryIntervention } from './escalation.js';
+import type { DiscoveryIntervention } from './escalation.js';
+import { createDiscoveryModelInput } from './model/index.js';
+import type { DiscoveryDecisionModel, DiscoveryHistoryEntry } from './model/index.js';
+import { projectObservationForAgent } from './observation-projector.js';
+import type { DiscoveryResult, DiscoveryRunState, DiscoveryStepRecord } from './run-state.js';
+
+export const DEFAULT_DISCOVERY_MAX_STEPS = 25;
+export const DEFAULT_DISCOVERY_MAX_REPEATED_STATES = 3;
+export const DEFAULT_DISCOVERY_OPERATION_TIMEOUT_MS = 15_000;
+export const DEFAULT_DISCOVERY_CONDITION_POLL_INTERVAL_MS = 100;
+
+const RECENT_LIMIT = 5;
+
+type DiscoveryContext = CoordinatedRunContext<TargetStrategy>;
+type NonTerminalDecision = Exclude<DiscoveryDecision, { readonly kind: 'complete' | 'escalate' }>;
+type ExecutableDecision = Exclude<NonTerminalDecision, { readonly kind: 'wait' }>;
+
+interface RuntimeFailureInput {
+  readonly code: RuntimeFailureCode;
+  readonly message: string;
+  readonly expected: JsonValue;
+  readonly observed: JsonValue;
+}
+
+interface WorkingMemory {
+  recentAction: AgentActionOutcome | null;
+  recentCondition: AgentConditionOutcome | null;
+  recentError: AgentError | null;
+  readonly history: DiscoveryHistoryEntry[];
+}
+
+export type DiscoveryCoordinator = Pick<
+  RunCoordinator<TargetStrategy>,
+  'start' | 'finish' | 'fail'
+>;
+
+export interface DiscoveryEngineDependencies {
+  readonly coordinator: DiscoveryCoordinator;
+  readonly model: DiscoveryDecisionModel;
+}
+
+export interface DiscoveryEngineOptions {
+  maxSteps?: number;
+  maxRepeatedStates?: number;
+  operationTimeoutMs?: number;
+  conditionPollIntervalMs?: number;
+  observationMaxTextLength?: number;
+  observationMaxControls?: number;
+  createId?: () => string;
+  now?: () => Date;
+}
+
+export interface DiscoveryRunOptions {
+  signal?: AbortSignal;
+}
+
+interface ResolvedOptions {
+  readonly maxSteps: number;
+  readonly maxRepeatedStates: number;
+  readonly operationTimeoutMs: number;
+  readonly conditionPollIntervalMs: number;
+  readonly observationMaxTextLength: number;
+  readonly observationMaxControls: number;
+}
+
+function boundedInteger(value: number, field: string, maximum: number): number {
+  if (!Number.isInteger(value) || value < 1 || value > maximum) {
+    throw new RangeError(`${field} must be an integer between 1 and ${maximum}`);
+  }
+
+  return value;
+}
+
+function locationOf(observation: AgentObservation): string {
+  return observation.location.kind === 'web'
+    ? observation.location.url
+    : `${observation.location.applicationId}: ${observation.location.windowTitle}`;
+}
+
+function fingerprint(observation: AgentObservation): string {
+  return createHash('sha256')
+    .update(
+      JSON.stringify({
+        location: observation.location,
+        text: observation.visibleTextSummary,
+        controls: observation.controls,
+        dialogs: observation.dialogs,
+        loading: observation.loading,
+        extractedValues: observation.extractedValues,
+      }),
+    )
+    .digest('hex');
+}
+
+function mapSurfaceFailure(error: SurfaceFailure): RuntimeFailureInput {
+  let code: RuntimeFailureCode;
+
+  switch (error.code) {
+    case 'TARGET_NOT_FOUND':
+    case 'TARGET_AMBIGUOUS':
+    case 'NAVIGATION_FAILED':
+    case 'ACTION_FAILED':
+      code = error.code;
+      break;
+    case 'CONDITION_TIMEOUT':
+      code = 'RUN_TIMEOUT';
+      break;
+    case 'CONDITION_EVALUATION_FAILED':
+      code = 'CHECKPOINT_FAILED';
+      break;
+    case 'SURFACE_UNAVAILABLE':
+      code = 'APPLICATION_ERROR';
+      break;
+    case 'STALE_TARGET':
+    case 'UNSUPPORTED_OPERATION':
+      code = 'ACTION_FAILED';
+      break;
+  }
+
+  return {
+    code,
+    message: error.message,
+    expected: error.expected,
+    observed: error.observed,
+  };
+}
+
+function decisionTarget(decision: ExecutableDecision): AgentTargetSpec | null {
+  if (decision.kind === 'navigate') {
+    return null;
+  }
+
+  if (decision.kind === 'dismiss') {
+    return decision.dialog.kind === 'surface' ? decision.dialog.target : null;
+  }
+
+  return decision.target;
+}
+
+function nativeDismissAction(
+  decision: Extract<ExecutableDecision, { readonly kind: 'dismiss' }>,
+): ExecutableSurfaceAction | null {
+  if (decision.dialog.kind !== 'native') {
+    return null;
+  }
+
+  const response =
+    decision.dialog.response.kind === 'dismiss'
+      ? { kind: 'dismiss' as const }
+      : decision.dialog.response.promptText === undefined
+        ? { kind: 'accept' as const }
+        : {
+            kind: 'accept' as const,
+            promptText: decision.dialog.response.promptText,
+          };
+
+  return {
+    kind: 'dismiss',
+    dialog: {
+      kind: 'native',
+      observationId: decision.dialog.observationId,
+      dialogId: decision.dialog.dialogId,
+      response,
+    },
+  };
+}
+
+function executableAction(
+  decision: ExecutableDecision,
+  target: ResolvedTarget | null,
+): ExecutableSurfaceAction {
+  if (decision.kind === 'navigate') {
+    return { kind: 'navigate', destination: decision.destination };
+  }
+
+  if (decision.kind === 'dismiss') {
+    const native = nativeDismissAction(decision);
+    if (native !== null) return native;
+    if (target === null) throw new Error('Surface dismissal requires a resolved target');
+    return { kind: 'dismiss', dialog: { kind: 'surface', target } };
+  }
+
+  if (target === null) throw new Error(`${decision.kind} requires a resolved target`);
+
+  switch (decision.kind) {
+    case 'click':
+      return { kind: 'click', target };
+    case 'type':
+      return { kind: 'type', target, text: decision.text, mode: decision.mode };
+    case 'select':
+      return { kind: 'select', target, option: decision.option };
+    case 'check':
+      return { kind: 'check', target };
+    case 'uncheck':
+      return { kind: 'uncheck', target };
+    case 'read':
+      return { kind: 'read', target, source: decision.source };
+  }
+}
+
+function actionSummary(decision: ExecutableDecision): string {
+  if (decision.kind === 'navigate') return `navigate to ${decision.destination}`;
+  if (decision.kind === 'dismiss') {
+    return decision.dialog.kind === 'native'
+      ? 'dismiss native dialog'
+      : `dismiss ${decision.dialog.target.description}`;
+  }
+  return `${decision.kind} ${decision.target.description}`;
+}
+
+function appendHistory(memory: WorkingMemory, entry: DiscoveryHistoryEntry): void {
+  memory.history.push(entry);
+  if (memory.history.length > RECENT_LIMIT) memory.history.shift();
+}
+
+function appendStep(state: DiscoveryRunState, record: DiscoveryStepRecord): void {
+  state.recentSteps.push(record);
+  if (state.recentSteps.length > RECENT_LIMIT) state.recentSteps.shift();
+}
+
+function isAtEntry(observation: SurfaceObservation, entryUrl: string): boolean {
+  if (observation.location.kind !== 'web') return false;
+
+  try {
+    const current = new URL(observation.location.url);
+    const entry = new URL(entryUrl);
+    current.hash = '';
+    entry.hash = '';
+    return current.href === entry.href;
+  } catch {
+    return false;
+  }
+}
+
+export class DiscoveryEngine {
+  private readonly options: ResolvedOptions;
+  private readonly createId: () => string;
+  private readonly now: () => Date;
+
+  constructor(
+    private readonly dependencies: DiscoveryEngineDependencies,
+    options: DiscoveryEngineOptions = {},
+  ) {
+    this.options = {
+      maxSteps: boundedInteger(options.maxSteps ?? DEFAULT_DISCOVERY_MAX_STEPS, 'maxSteps', 100),
+      maxRepeatedStates: boundedInteger(
+        options.maxRepeatedStates ?? DEFAULT_DISCOVERY_MAX_REPEATED_STATES,
+        'maxRepeatedStates',
+        100,
+      ),
+      operationTimeoutMs: boundedInteger(
+        options.operationTimeoutMs ?? DEFAULT_DISCOVERY_OPERATION_TIMEOUT_MS,
+        'operationTimeoutMs',
+        15 * 60_000,
+      ),
+      conditionPollIntervalMs: boundedInteger(
+        options.conditionPollIntervalMs ?? DEFAULT_DISCOVERY_CONDITION_POLL_INTERVAL_MS,
+        'conditionPollIntervalMs',
+        60_000,
+      ),
+      observationMaxTextLength: boundedInteger(
+        options.observationMaxTextLength ?? 20_000,
+        'observationMaxTextLength',
+        100_000,
+      ),
+      observationMaxControls: boundedInteger(
+        options.observationMaxControls ?? 200,
+        'observationMaxControls',
+        2_000,
+      ),
+    };
+    this.createId = options.createId ?? randomUUID;
+    this.now = options.now ?? (() => new Date());
+  }
+
+  async run(input: unknown, runOptions: DiscoveryRunOptions = {}): Promise<DiscoveryResult> {
+    const request = parseDiscoveryRequest(input);
+    const requestedConfig = resolveDiscoveryRunConfig(request);
+    const runId = this.createId();
+    const startedAt = this.now();
+    const maxSteps = Math.min(requestedConfig.maxSteps, this.options.maxSteps);
+    const state: DiscoveryRunState = {
+      runId,
+      request,
+      config: { ...requestedConfig, maxSteps },
+      startedAt: startedAt.toISOString(),
+      deadlineAt: new Date(startedAt.getTime() + requestedConfig.timeoutMs).toISOString(),
+      step: 0,
+      lastObservationFingerprint: null,
+      repeatedStateCount: 0,
+      extractedValues: {},
+      extractions: [],
+      recentSteps: [],
+    };
+    const memory: WorkingMemory = {
+      recentAction: null,
+      recentCondition: null,
+      recentError: null,
+      history: [],
+    };
+
+    const context = await this.dependencies.coordinator.start({
+      runId,
+      mode: 'DISCOVERY',
+      timeoutMs: requestedConfig.timeoutMs,
+      metadata: {
+        application: request.target.application,
+        goal: request.goal,
+        maxSteps,
+      },
+    });
+
+    try {
+      const entryResult = await this.ensureEntry(context, state, runOptions.signal);
+      if (entryResult !== null) return entryResult;
+
+      while (state.step < state.config.maxSteps) {
+        if (this.stopped(state, runOptions.signal)) {
+          return this.finishFailure(context, state, {
+            code: 'RUN_TIMEOUT',
+            message:
+              runOptions.signal?.aborted === true
+                ? 'Discovery was cancelled'
+                : 'Discovery exceeded its runtime limit',
+            expected: 'active discovery budget',
+            observed: runOptions.signal?.aborted === true ? 'aborted' : 'deadline exceeded',
+          });
+        }
+
+        state.step += 1;
+        const observed = await this.observe(context, state, runOptions.signal);
+        if (observed.status === 'failure') {
+          return this.finishFailure(context, state, mapSurfaceFailure(observed.error));
+        }
+
+        const agentObservation = projectObservationForAgent({
+          goal: request.goal,
+          step: state.step,
+          observation: observed.observation,
+          extractedValues: state.extractedValues,
+          recentAction: memory.recentAction,
+          recentCondition: memory.recentCondition,
+          recentError: memory.recentError,
+        });
+
+        await context.evidenceRecorder.recordEvent({
+          step: state.step,
+          eventType: 'observation',
+          result: agentObservation,
+        });
+
+        const currentFingerprint = fingerprint(agentObservation);
+        state.repeatedStateCount =
+          state.lastObservationFingerprint === currentFingerprint
+            ? state.repeatedStateCount + 1
+            : 1;
+        state.lastObservationFingerprint = currentFingerprint;
+
+        if (state.repeatedStateCount >= this.options.maxRepeatedStates) {
+          return this.escalate(
+            context,
+            state,
+            createDiscoveryIntervention(
+              {
+                source: 'repeated_state',
+                goal: request.goal,
+                step: state.step,
+                observationId: agentObservation.observationId,
+                location: locationOf(agentObservation),
+                repeatedStateCount: state.repeatedStateCount,
+                threshold: this.options.maxRepeatedStates,
+              },
+              { createId: this.createId },
+            ),
+          );
+        }
+
+        const decision = parseDiscoveryDecision(
+          await this.dependencies.model.decide(
+            createDiscoveryModelInput({
+              observation: agentObservation,
+              history: memory.history,
+            }),
+          ),
+        );
+
+        await context.evidenceRecorder.recordEvent({
+          step: state.step,
+          eventType: 'model_decision',
+          action: decision,
+          result: { accepted: true },
+        });
+
+        if (decision.kind === 'complete') {
+          const verification = verifyDiscoveryCompletion(decision, state);
+          if (verification.status === 'verified') {
+            appendStep(state, {
+              step: state.step,
+              observationId: agentObservation.observationId,
+              observationFingerprint: currentFingerprint,
+              decision,
+              outcome: 'completed',
+              result: verification.outputs,
+            });
+            return this.finishSuccess(context, verification.outputs);
+          }
+
+          memory.recentAction = null;
+          memory.recentCondition = null;
+          memory.recentError = {
+            code: 'UNSUPPORTED_COMPLETION',
+            message: verification.issues.map((issue) => issue.message).join('; '),
+            recoverable: true,
+          };
+          appendHistory(memory, {
+            step: state.step,
+            decisionKind: 'complete',
+            outcome: 'failure',
+            summary: 'Completion rejected because matching surface-read evidence was unavailable',
+          });
+          appendStep(state, {
+            step: state.step,
+            observationId: agentObservation.observationId,
+            observationFingerprint: currentFingerprint,
+            decision,
+            outcome: 'completion_rejected',
+            result: verification.issues.map((issue) => ({ ...issue })),
+          });
+          await context.evidenceRecorder.recordEvent({
+            step: state.step,
+            eventType: 'model_decision',
+            action: decision,
+            result: { accepted: false, issues: verification.issues },
+          });
+          continue;
+        }
+
+        if (decision.kind === 'escalate') {
+          return this.escalate(
+            context,
+            state,
+            createDiscoveryIntervention(
+              {
+                source: 'model',
+                goal: request.goal,
+                step: state.step,
+                observationId: agentObservation.observationId,
+                location: locationOf(agentObservation),
+                decision,
+              },
+              { createId: this.createId },
+            ),
+          );
+        }
+
+        const terminal = await this.execute(
+          context,
+          state,
+          memory,
+          agentObservation,
+          decision,
+          runOptions.signal,
+        );
+        if (terminal !== null) return terminal;
+      }
+
+      return this.finishFailure(context, state, {
+        code: 'RUN_TIMEOUT',
+        message: 'Discovery exhausted its maximum step budget',
+        expected: `fewer than ${state.config.maxSteps} steps`,
+        observed: state.step,
+      });
+    } catch {
+      const summary = await this.dependencies.coordinator.fail({
+        code: 'APPLICATION_ERROR',
+        phase: 'discovery_loop',
+      });
+      return parseRuntimeResult({
+        runId: summary.runId,
+        startedAt: summary.startedAt,
+        finishedAt: summary.finishedAt,
+        durationMs: summary.durationMs,
+        evidenceRefs: summary.evidenceRefs,
+        sessionId: context.sessionManager.sessionId,
+        recoverableConditions: [],
+        status: 'failure',
+        error: {
+          code: 'APPLICATION_ERROR',
+          message: 'Discovery engine failed unexpectedly',
+          stepId: state.step === 0 ? null : String(state.step),
+          expected: 'a valid bounded discovery transition',
+          observed: 'unexpected internal failure',
+          details: { phase: 'discovery_loop' },
+        },
+      });
+    }
+  }
+
+  private async ensureEntry(
+    context: DiscoveryContext,
+    state: DiscoveryRunState,
+    signal: AbortSignal | undefined,
+  ): Promise<DiscoveryResult | null> {
+    const observed = await this.observe(context, state, signal);
+    if (observed.status === 'failure') {
+      return this.finishFailure(context, state, mapSurfaceFailure(observed.error));
+    }
+    if (isAtEntry(observed.observation, state.request.target.entryUrl)) return null;
+
+    const policy = context.policyEngine.evaluate({
+      url: state.request.target.entryUrl,
+      action: { kind: 'navigate' },
+    });
+    await context.evidenceRecorder.recordEvent({
+      step: 0,
+      eventType: 'policy_decision',
+      action: { kind: 'navigate', destination: state.request.target.entryUrl },
+      policyDecision: policy,
+    });
+
+    if (policy.decision === 'DENY') {
+      return this.finishFailure(context, state, {
+        code: 'POLICY_DENIED',
+        message: policy.reason,
+        expected: 'policy-approved entry navigation',
+        observed: 'policy denial',
+      });
+    }
+    if (policy.decision === 'REQUIRE_HUMAN') {
+      return this.escalate(
+        context,
+        state,
+        createDiscoveryIntervention(
+          {
+            source: 'policy',
+            goal: state.request.goal,
+            step: 0,
+            observationId: observed.observation.observationId,
+            location: state.request.target.entryUrl,
+            policyDecision: policy,
+            actionKind: 'navigate',
+          },
+          { createId: this.createId },
+        ),
+      );
+    }
+
+    const result = await context.surface.perform(
+      {
+        actionId: this.createId(),
+        action: { kind: 'navigate', destination: state.request.target.entryUrl },
+      },
+      this.operationOptions(state, signal),
+    );
+    await context.evidenceRecorder.recordEvent({
+      step: 0,
+      eventType: 'action',
+      action: { kind: 'navigate', destination: state.request.target.entryUrl },
+      result,
+      evidenceRefs: result.evidenceRefs,
+    });
+    return result.status === 'failure'
+      ? this.finishFailure(context, state, mapSurfaceFailure(result.error))
+      : null;
+  }
+
+  private async execute(
+    context: DiscoveryContext,
+    state: DiscoveryRunState,
+    memory: WorkingMemory,
+    observation: AgentObservation,
+    decision: NonTerminalDecision,
+    signal: AbortSignal | undefined,
+  ): Promise<DiscoveryResult | null> {
+    const actionKind: PolicyActionKind = decision.kind;
+    const url =
+      decision.kind === 'navigate'
+        ? decision.destination
+        : observation.location.kind === 'web'
+          ? observation.location.url
+          : '';
+    const policy = context.policyEngine.evaluate({ url, action: { kind: actionKind } });
+
+    await context.evidenceRecorder.recordEvent({
+      step: state.step,
+      eventType: 'policy_decision',
+      action: decision,
+      policyDecision: policy,
+    });
+
+    if (policy.decision === 'DENY') {
+      return this.finishFailure(context, state, {
+        code: 'POLICY_DENIED',
+        message: policy.reason,
+        expected: 'an action allowed by deterministic policy',
+        observed: decision.kind,
+      });
+    }
+    if (policy.decision === 'REQUIRE_HUMAN') {
+      return this.escalate(
+        context,
+        state,
+        createDiscoveryIntervention(
+          {
+            source: 'policy',
+            goal: state.request.goal,
+            step: state.step,
+            observationId: observation.observationId,
+            location: locationOf(observation),
+            policyDecision: policy,
+            actionKind,
+          },
+          { createId: this.createId },
+        ),
+      );
+    }
+
+    if (decision.kind === 'wait') {
+      const timeoutMs = this.remainingTimeout(state);
+      const result = await new ConditionEvaluator(context.surface).evaluate(
+        { conditionId: this.createId(), condition: decision.condition },
+        {
+          timeoutMs,
+          pollIntervalMs: Math.min(this.options.conditionPollIntervalMs, timeoutMs),
+          ...(signal === undefined ? {} : { signal }),
+        },
+      );
+      await context.evidenceRecorder.recordEvent({
+        step: state.step,
+        eventType: 'condition',
+        action: decision,
+        result,
+        evidenceRefs: result.evidenceRefs,
+      });
+      memory.recentAction = null;
+      memory.recentCondition = {
+        status: result.status,
+        conditionKind: decision.condition.kind,
+        summary: result.passed ? 'Condition passed' : 'Condition was not satisfied',
+      };
+      memory.recentError =
+        result.status === 'error'
+          ? { code: result.error.code, message: result.error.message, recoverable: true }
+          : null;
+      appendHistory(memory, {
+        step: state.step,
+        decisionKind: 'wait',
+        outcome:
+          result.status === 'passed'
+            ? 'success'
+            : result.status === 'not_met'
+              ? 'not_met'
+              : 'failure',
+        summary: memory.recentCondition.summary,
+      });
+      appendStep(state, {
+        step: state.step,
+        observationId: observation.observationId,
+        observationFingerprint: fingerprint(observation),
+        decision,
+        outcome: result.status === 'passed' ? 'action_succeeded' : 'action_failed',
+        result: result.observed,
+      });
+      return null;
+    }
+
+    const targetSpec = decisionTarget(decision);
+    let target: ResolvedTarget | null = null;
+
+    if (targetSpec !== null) {
+      const resolution = await new TargetResolver(context.surface).resolve(
+        { observationId: observation.observationId, target: targetSpec },
+        this.operationOptions(state, signal),
+      );
+      if (resolution.status === 'failure') {
+        if (resolution.error.code === 'TARGET_AMBIGUOUS') {
+          return this.escalate(
+            context,
+            state,
+            createDiscoveryIntervention(
+              {
+                source: 'unsafe_ambiguity',
+                goal: state.request.goal,
+                step: state.step,
+                observationId: observation.observationId,
+                location: locationOf(observation),
+                targetDescription: targetSpec.description,
+                resolutionAttempts: Math.max(1, resolution.attempts.length),
+              },
+              { createId: this.createId },
+            ),
+          );
+        }
+        this.recordFailure(state, memory, observation, decision, resolution.error);
+        await context.evidenceRecorder.recordEvent({
+          step: state.step,
+          eventType: 'action',
+          action: decision,
+          target: targetSpec,
+          result: resolution,
+        });
+        return null;
+      }
+      target = resolution.target;
+    }
+
+    const result = await context.surface.perform(
+      { actionId: this.createId(), action: executableAction(decision, target) },
+      this.operationOptions(state, signal),
+    );
+    await context.evidenceRecorder.recordEvent({
+      step: state.step,
+      eventType: 'action',
+      action: decision,
+      target: targetSpec,
+      result,
+      evidenceRefs: result.evidenceRefs,
+    });
+    this.applyResult(state, memory, observation, decision, result);
+    return null;
+  }
+
+  private applyResult(
+    state: DiscoveryRunState,
+    memory: WorkingMemory,
+    observation: AgentObservation,
+    decision: ExecutableDecision,
+    result: ActionResult,
+  ): void {
+    if (result.status === 'failure') {
+      this.recordFailure(state, memory, observation, decision, result.error);
+      return;
+    }
+
+    const summary = actionSummary(decision);
+    const output: JsonValue =
+      result.output.kind === 'read' ? result.output.value : { kind: 'none' };
+    memory.recentAction = {
+      status: 'success',
+      actionKind: decision.kind,
+      summary,
+      output,
+    };
+    memory.recentCondition = null;
+    memory.recentError = null;
+
+    let outcome: DiscoveryStepRecord['outcome'] = 'action_succeeded';
+    if (decision.kind === 'read' && result.output.kind === 'read') {
+      state.extractedValues[decision.saveAs] = result.output.value;
+      state.extractions.push({
+        outputName: decision.saveAs,
+        value: result.output.value,
+        source: 'surface_read',
+        step: state.step,
+        observationId: observation.observationId,
+        actionId: result.actionId,
+      });
+      outcome = 'value_extracted';
+    }
+
+    appendHistory(memory, {
+      step: state.step,
+      decisionKind: decision.kind,
+      outcome: 'success',
+      summary,
+    });
+    appendStep(state, {
+      step: state.step,
+      observationId: observation.observationId,
+      observationFingerprint: fingerprint(observation),
+      decision,
+      outcome,
+      result: output,
+    });
+  }
+
+  private recordFailure(
+    state: DiscoveryRunState,
+    memory: WorkingMemory,
+    observation: AgentObservation,
+    decision: ExecutableDecision,
+    error: SurfaceFailure,
+  ): void {
+    const summary = `${actionSummary(decision)} failed: ${error.message}`;
+    memory.recentAction = {
+      status: 'failure',
+      actionKind: decision.kind,
+      summary,
+      errorCode: error.code,
+      recoverable: true,
+    };
+    memory.recentCondition = null;
+    memory.recentError = {
+      code: error.code,
+      message: error.message,
+      recoverable: true,
+    };
+    appendHistory(memory, {
+      step: state.step,
+      decisionKind: decision.kind,
+      outcome: 'failure',
+      summary,
+    });
+    appendStep(state, {
+      step: state.step,
+      observationId: observation.observationId,
+      observationFingerprint: fingerprint(observation),
+      decision,
+      outcome: 'action_failed',
+      result: {
+        code: error.code,
+        expected: error.expected,
+        observed: error.observed,
+      },
+    });
+  }
+
+  private observe(
+    context: DiscoveryContext,
+    state: DiscoveryRunState,
+    signal: AbortSignal | undefined,
+  ) {
+    return context.surface.observe({
+      ...this.operationOptions(state, signal),
+      maxTextLength: this.options.observationMaxTextLength,
+      maxControls: this.options.observationMaxControls,
+    });
+  }
+
+  private operationOptions(state: DiscoveryRunState, signal: AbortSignal | undefined) {
+    return {
+      timeoutMs: this.remainingTimeout(state),
+      ...(signal === undefined ? {} : { signal }),
+    };
+  }
+
+  private remainingTimeout(state: DiscoveryRunState): number {
+    const remaining = Date.parse(state.deadlineAt) - this.now().getTime();
+    return Math.max(1, Math.min(this.options.operationTimeoutMs, remaining));
+  }
+
+  private stopped(state: DiscoveryRunState, signal: AbortSignal | undefined): boolean {
+    return signal?.aborted === true || this.now().getTime() >= Date.parse(state.deadlineAt);
+  }
+
+  private async finishSuccess(
+    context: DiscoveryContext,
+    outputs: Readonly<Record<string, JsonValue>>,
+  ): Promise<DiscoveryResult> {
+    const summary = await this.dependencies.coordinator.finish({
+      status: 'success',
+      result: { outputs },
+    });
+    return parseRuntimeResult({
+      runId: summary.runId,
+      startedAt: summary.startedAt,
+      finishedAt: summary.finishedAt,
+      durationMs: summary.durationMs,
+      evidenceRefs: summary.evidenceRefs,
+      sessionId: context.sessionManager.sessionId,
+      recoverableConditions: [],
+      status: 'success',
+      outputs,
+    });
+  }
+
+  private async escalate(
+    context: DiscoveryContext,
+    state: DiscoveryRunState,
+    intervention: DiscoveryIntervention,
+  ): Promise<DiscoveryResult> {
+    await context.evidenceRecorder.recordEvent({
+      step: state.step,
+      eventType: 'intervention',
+      result: intervention,
+    });
+    const summary = await this.dependencies.coordinator.finish({
+      status: 'intervention_required',
+      result: { intervention },
+    });
+    return parseRuntimeResult({
+      runId: summary.runId,
+      startedAt: summary.startedAt,
+      finishedAt: summary.finishedAt,
+      durationMs: summary.durationMs,
+      evidenceRefs: summary.evidenceRefs,
+      sessionId: context.sessionManager.sessionId,
+      recoverableConditions: [],
+      status: 'intervention_required',
+      intervention,
+    });
+  }
+
+  private async finishFailure(
+    context: DiscoveryContext,
+    state: DiscoveryRunState,
+    failure: RuntimeFailureInput,
+  ): Promise<DiscoveryResult> {
+    const error = {
+      ...failure,
+      stepId: state.step === 0 ? null : String(state.step),
+      details: { phase: 'discovery_loop', step: state.step },
+    };
+    const summary = await this.dependencies.coordinator.fail(error);
+    return parseRuntimeResult({
+      runId: summary.runId,
+      startedAt: summary.startedAt,
+      finishedAt: summary.finishedAt,
+      durationMs: summary.durationMs,
+      evidenceRefs: summary.evidenceRefs,
+      sessionId: context.sessionManager.sessionId,
+      recoverableConditions: [],
+      status: 'failure',
+      error,
+    });
+  }
+}

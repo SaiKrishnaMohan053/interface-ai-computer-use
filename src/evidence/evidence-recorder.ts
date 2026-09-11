@@ -23,6 +23,7 @@ export type EvidenceEventType =
   | 'run_started'
   | 'session_lifecycle'
   | 'observation'
+  | 'model_decision'
   | 'policy_decision'
   | 'action'
   | 'condition'

@@ -67,3 +67,17 @@ export type {
 export * from './agent-observation.js';
 export * from './observation-projector.js';
 export * from './model/index.js';
+
+export {
+  DEFAULT_DISCOVERY_CONDITION_POLL_INTERVAL_MS,
+  DEFAULT_DISCOVERY_MAX_REPEATED_STATES,
+  DEFAULT_DISCOVERY_OPERATION_TIMEOUT_MS,
+  DiscoveryEngine,
+} from './discovery-engine.js';
+
+export type {
+  DiscoveryCoordinator,
+  DiscoveryEngineDependencies,
+  DiscoveryEngineOptions,
+  DiscoveryRunOptions,
+} from './discovery-engine.js';
