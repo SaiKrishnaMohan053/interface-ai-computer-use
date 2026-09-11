@@ -203,7 +203,18 @@ describe('OpenAIDiscoveryDecisionModel', () => {
     });
 
     expect(received?.model).toBe('gpt-4.1-mini');
-    expect(received?.observationJson).toContain('$12,840.50');
+    expect(received?.modelInputJson).toContain('$12,840.50');
+    const transmittedInput = JSON.parse(received?.modelInputJson ?? '{}') as Record<
+      string,
+      unknown
+    >;
+
+    expect(transmittedInput).toHaveProperty('goal', "Read Alex Morgan's Savings balance");
+
+    expect(transmittedInput).toHaveProperty('step', 4);
+    expect(transmittedInput).toHaveProperty('currentObservation');
+    expect(transmittedInput).toHaveProperty('recent');
+    expect(transmittedInput).toHaveProperty('history');
     expect(received?.systemPrompt).toContain('Do not invent controls');
     expect(received?.decisionContract).toContain('"complete"');
 

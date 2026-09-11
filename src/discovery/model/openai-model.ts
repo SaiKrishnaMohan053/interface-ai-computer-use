@@ -2,8 +2,6 @@ import OpenAI from 'openai';
 import { zodTextFormat } from 'openai/helpers/zod';
 import { z } from 'zod';
 
-import { agentObservationSchema } from '../agent-observation.js';
-
 import {
   DISCOVERY_DECISION_KINDS,
   discoveryDecisionSchema,
@@ -11,6 +9,8 @@ import {
 } from '../decision.js';
 
 import type { DiscoveryDecision } from '../decision.js';
+
+import { buildDiscoveryModelContext } from './discovery-decision-model.js';
 
 import type { DiscoveryDecisionModel, DiscoveryModelInput } from './discovery-decision-model.js';
 
@@ -45,7 +45,7 @@ export interface OpenAIDecisionTransportRequest {
   readonly model: string;
   readonly systemPrompt: string;
   readonly decisionContract: string;
-  readonly observationJson: string;
+  readonly modelInputJson: string;
 }
 
 /**
@@ -87,7 +87,7 @@ function createDefaultTransport(config: OpenAIDiscoveryModelConfig): OpenAIDecis
             'The selected decision must satisfy this DiscoveryDecision JSON Schema:',
             request.decisionContract,
             'Current structured observation:',
-            request.observationJson,
+            request.modelInputJson,
           ].join('\n\n'),
         },
       ],
@@ -154,13 +154,13 @@ export class OpenAIDiscoveryDecisionModel implements DiscoveryDecisionModel {
   }
 
   async decide(input: DiscoveryModelInput): Promise<DiscoveryDecision> {
-    const observation = agentObservationSchema.parse(input.observation);
+    const modelContext = buildDiscoveryModelContext(input);
 
     const rawResponse = await this.transport({
       model: this.config.model,
       systemPrompt: DISCOVERY_SYSTEM_PROMPT,
       decisionContract: decisionJsonSchema,
-      observationJson: JSON.stringify(observation),
+      modelInputJson: JSON.stringify(modelContext),
     });
 
     const wireResponse = openAIWireResponseSchema.safeParse(rawResponse);

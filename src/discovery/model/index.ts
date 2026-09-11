@@ -1,4 +1,18 @@
-export type { DiscoveryDecisionModel, DiscoveryModelInput } from './discovery-decision-model.js';
+export {
+  DISCOVERY_HISTORY_SUMMARY_LIMIT,
+  DISCOVERY_MODEL_HISTORY_LIMIT,
+  buildDiscoveryModelContext,
+  createDiscoveryModelInput,
+  discoveryHistoryEntrySchema,
+  discoveryModelContextSchema,
+} from './discovery-decision-model.js';
+
+export type {
+  DiscoveryDecisionModel,
+  DiscoveryHistoryEntry,
+  DiscoveryModelContext,
+  DiscoveryModelInput,
+} from './discovery-decision-model.js';
 
 export {
   ModelConfigurationError,
