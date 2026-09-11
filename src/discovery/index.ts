@@ -81,3 +81,16 @@ export type {
   DiscoveryEngineOptions,
   DiscoveryRunOptions,
 } from './discovery-engine.js';
+
+export {
+  TRANSLATABLE_DISCOVERY_DECISION_KINDS,
+  DiscoveryActionTranslationError,
+  getDiscoveryDecisionTarget,
+  translateDiscoveryDecision,
+} from './action-translator.js';
+
+export type {
+  DiscoveryActionTranslationErrorCode,
+  DiscoveryActionTranslationInput,
+  TranslatableDiscoveryDecision,
+} from './action-translator.js';
