@@ -66,3 +66,4 @@ export type {
 
 export * from './agent-observation.js';
 export * from './observation-projector.js';
+export * from './model/index.js';
