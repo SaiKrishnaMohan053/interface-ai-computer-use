@@ -52,3 +52,14 @@ export type {
   CompletionVerificationIssue,
   CompletionVerificationResult,
 } from './completion-verifier.js';
+
+export { DISCOVERY_ESCALATION_SOURCES, createDiscoveryIntervention } from './escalation.js';
+
+export type {
+  CreateDiscoveryInterventionOptions,
+  DiscoveryEscalationSource,
+  DiscoveryEscalationTrigger,
+  DiscoveryIntervention,
+  HumanPolicyDecision,
+  ModelEscalationDecision,
+} from './escalation.js';
