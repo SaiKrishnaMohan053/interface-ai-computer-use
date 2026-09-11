@@ -22,3 +22,4 @@ export {
 } from './openai-model.js';
 
 export type { OpenAIDecisionTransport, OpenAIDecisionTransportRequest } from './openai-model.js';
+export { DISCOVERY_SYSTEM_PROMPT } from './discovery-system-prompt.js';

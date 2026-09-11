@@ -205,6 +205,9 @@ describe('OpenAIDiscoveryDecisionModel', () => {
     expect(received?.model).toBe('gpt-4.1-mini');
     expect(received?.observationJson).toContain('$12,840.50');
     expect(received?.systemPrompt).toContain('Do not invent controls');
+    expect(received?.decisionContract).toContain('"complete"');
+
+    expect(received?.decisionContract).toContain('"escalate"');
 
     expect(JSON.stringify(received)).not.toContain(config.apiKey);
   });

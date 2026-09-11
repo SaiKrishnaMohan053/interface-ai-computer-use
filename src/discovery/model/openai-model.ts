@@ -21,15 +21,15 @@ import {
 
 import type { OpenAIDiscoveryModelConfig } from './model-config.js';
 
+import { DISCOVERY_SYSTEM_PROMPT } from './discovery-system-prompt.js';
+
 const openAIWireDecisionSchema = z
   .object({
-    kind: z.enum(DISCOVERY_DECISION_KINDS),
+    kind: z.enum(DISCOVERY_DECISION_KINDS).describe('The single DiscoveryDecision kind to perform'),
 
-    /**
-     * JSON object containing the selected decision's fields except kind.
-     * The reconstructed decision is validated by discoveryDecisionSchema.
-     */
-    argumentsJson: z.string(),
+    argumentsJson: z
+      .string()
+      .describe('A JSON object containing all fields for the selected decision except kind'),
   })
   .strict();
 
@@ -44,6 +44,7 @@ type OpenAIWireResponse = z.infer<typeof openAIWireResponseSchema>;
 export interface OpenAIDecisionTransportRequest {
   readonly model: string;
   readonly systemPrompt: string;
+  readonly decisionContract: string;
   readonly observationJson: string;
 }
 
@@ -62,40 +63,6 @@ export class DiscoveryModelResponseError extends Error {
 }
 
 const decisionJsonSchema = JSON.stringify(z.toJSONSchema(discoveryDecisionSchema), null, 2);
-
-const DISCOVERY_SYSTEM_PROMPT = `
-You are the decision component of a policy-controlled UI discovery engine.
-
-Choose exactly one next DiscoveryDecision based only on the supplied
-AgentObservation.
-
-Rules:
-
-1. Do not invent controls, text, account values, dialog state, URLs, or evidence.
-2. Use semantic targeting such as role, accessible name, label, visible text,
-   and structural table relationships.
-3. Do not use CSS selectors, XPath, coordinates, browser handles, or control IDs.
-4. Return complete only when the expected result was observed or extracted.
-5. Never treat your own completion claim as proof. The engine verifies it.
-6. Use escalate when automation is stuck or recovery is exhausted.
-7. The PolicyEngine may independently require human intervention.
-8. Do not claim that policy approval has been granted.
-9. Select only one action for the current step.
-10. Do not include kind inside argumentsJson.
-
-Return the provider wire format:
-
-{
-  "decision": {
-    "kind": "<decision kind>",
-    "argumentsJson": "<JSON object containing every other decision field>"
-  }
-}
-
-The reconstructed decision must conform to this domain JSON Schema:
-
-${decisionJsonSchema}
-`.trim();
 
 function createDefaultTransport(config: OpenAIDiscoveryModelConfig): OpenAIDecisionTransport {
   const client = new OpenAI({
@@ -116,7 +83,12 @@ function createDefaultTransport(config: OpenAIDiscoveryModelConfig): OpenAIDecis
         },
         {
           role: 'user',
-          content: request.observationJson,
+          content: [
+            'The selected decision must satisfy this DiscoveryDecision JSON Schema:',
+            request.decisionContract,
+            'Current structured observation:',
+            request.observationJson,
+          ].join('\n\n'),
         },
       ],
 
@@ -187,6 +159,7 @@ export class OpenAIDiscoveryDecisionModel implements DiscoveryDecisionModel {
     const rawResponse = await this.transport({
       model: this.config.model,
       systemPrompt: DISCOVERY_SYSTEM_PROMPT,
+      decisionContract: decisionJsonSchema,
       observationJson: JSON.stringify(observation),
     });
 
