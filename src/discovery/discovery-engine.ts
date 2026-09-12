@@ -35,6 +35,13 @@ import type { DiscoveryIntervention } from './escalation.js';
 import { createDiscoveryModelInput } from './model/index.js';
 import type { DiscoveryDecisionModel, DiscoveryHistoryEntry } from './model/index.js';
 import { projectObservationForAgent } from './observation-projector.js';
+import { extractDiscoveryRead, retainDiscoveryExtraction } from './read-extraction.js';
+import {
+  appendDiscoveryStep,
+  createDiscoveryRunState,
+  recordDiscoveryObservationFingerprint,
+} from './run-state.js';
+
 import type { DiscoveryResult, DiscoveryRunState, DiscoveryStepRecord } from './run-state.js';
 
 export const DEFAULT_DISCOVERY_MAX_STEPS = 25;
@@ -172,11 +179,6 @@ function appendHistory(memory: WorkingMemory, entry: DiscoveryHistoryEntry): voi
   if (memory.history.length > RECENT_LIMIT) memory.history.shift();
 }
 
-function appendStep(state: DiscoveryRunState, record: DiscoveryStepRecord): void {
-  state.recentSteps.push(record);
-  if (state.recentSteps.length > RECENT_LIMIT) state.recentSteps.shift();
-}
-
 function isAtEntry(observation: SurfaceObservation, entryUrl: string): boolean {
   if (observation.location.kind !== 'web') return false;
 
@@ -238,19 +240,13 @@ export class DiscoveryEngine {
     const runId = this.createId();
     const startedAt = this.now();
     const maxSteps = Math.min(requestedConfig.maxSteps, this.options.maxSteps);
-    const state: DiscoveryRunState = {
+    const state = createDiscoveryRunState({
       runId,
       request,
       config: { ...requestedConfig, maxSteps },
       startedAt: startedAt.toISOString(),
       deadlineAt: new Date(startedAt.getTime() + requestedConfig.timeoutMs).toISOString(),
-      step: 0,
-      lastObservationFingerprint: null,
-      repeatedStateCount: 0,
-      extractedValues: {},
-      extractions: [],
-      recentSteps: [],
-    };
+    });
     const memory: WorkingMemory = {
       recentAction: null,
       recentCondition: null,
@@ -309,11 +305,7 @@ export class DiscoveryEngine {
         });
 
         const currentFingerprint = fingerprint(agentObservation);
-        state.repeatedStateCount =
-          state.lastObservationFingerprint === currentFingerprint
-            ? state.repeatedStateCount + 1
-            : 1;
-        state.lastObservationFingerprint = currentFingerprint;
+        recordDiscoveryObservationFingerprint(state, currentFingerprint);
 
         if (state.repeatedStateCount >= this.options.maxRepeatedStates) {
           return this.escalate(
@@ -353,7 +345,7 @@ export class DiscoveryEngine {
         if (decision.kind === 'complete') {
           const verification = verifyDiscoveryCompletion(decision, state);
           if (verification.status === 'verified') {
-            appendStep(state, {
+            appendDiscoveryStep(state, {
               step: state.step,
               observationId: agentObservation.observationId,
               observationFingerprint: currentFingerprint,
@@ -377,7 +369,7 @@ export class DiscoveryEngine {
             outcome: 'failure',
             summary: 'Completion rejected because matching surface-read evidence was unavailable',
           });
-          appendStep(state, {
+          appendDiscoveryStep(state, {
             step: state.step,
             observationId: agentObservation.observationId,
             observationFingerprint: currentFingerprint,
@@ -610,7 +602,7 @@ export class DiscoveryEngine {
               : 'failure',
         summary: memory.recentCondition.summary,
       });
-      appendStep(state, {
+      appendDiscoveryStep(state, {
         step: state.step,
         observationId: observation.observationId,
         observationFingerprint: fingerprint(observation),
@@ -695,6 +687,22 @@ export class DiscoveryEngine {
       return;
     }
 
+    let extraction: ReturnType<typeof extractDiscoveryRead> | null = null;
+
+    if (decision.kind === 'read') {
+      extraction = extractDiscoveryRead({
+        decision,
+        result,
+        step: state.step,
+        observationId: observation.observationId,
+      });
+
+      if (extraction.status === 'rejected') {
+        this.recordFailure(state, memory, observation, decision, extraction.error);
+        return;
+      }
+    }
+
     const summary = actionSummary(decision);
     const output: JsonValue =
       result.output.kind === 'read' ? result.output.value : { kind: 'none' };
@@ -708,16 +716,9 @@ export class DiscoveryEngine {
     memory.recentError = null;
 
     let outcome: DiscoveryStepRecord['outcome'] = 'action_succeeded';
-    if (decision.kind === 'read' && result.output.kind === 'read') {
-      state.extractedValues[decision.saveAs] = result.output.value;
-      state.extractions.push({
-        outputName: decision.saveAs,
-        value: result.output.value,
-        source: 'surface_read',
-        step: state.step,
-        observationId: observation.observationId,
-        actionId: result.actionId,
-      });
+
+    if (extraction?.status === 'extracted') {
+      retainDiscoveryExtraction(state, extraction.record);
       outcome = 'value_extracted';
     }
 
@@ -727,7 +728,7 @@ export class DiscoveryEngine {
       outcome: 'success',
       summary,
     });
-    appendStep(state, {
+    appendDiscoveryStep(state, {
       step: state.step,
       observationId: observation.observationId,
       observationFingerprint: fingerprint(observation),
@@ -764,7 +765,7 @@ export class DiscoveryEngine {
       outcome: 'failure',
       summary,
     });
-    appendStep(state, {
+    appendDiscoveryStep(state, {
       step: state.step,
       observationId: observation.observationId,
       observationFingerprint: fingerprint(observation),

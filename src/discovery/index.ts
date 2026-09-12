@@ -44,6 +44,15 @@ export type {
   DiscoveryStepRecord,
 } from './run-state.js';
 
+export {
+  DEFAULT_DISCOVERY_RECENT_STEP_LIMIT,
+  appendDiscoveryStep,
+  createDiscoveryRunState,
+  recordDiscoveryObservationFingerprint,
+} from './run-state.js';
+
+export type { CreateDiscoveryRunStateInput } from './run-state.js';
+
 export { COMPLETION_REJECTION_CODES, verifyDiscoveryCompletion } from './completion-verifier.js';
 
 export type {
@@ -80,6 +89,15 @@ export type {
   DiscoveryActionTranslationInput,
   TranslatableDiscoveryDecision,
 } from './action-translator.js';
+
+export { extractDiscoveryRead, retainDiscoveryExtraction } from './read-extraction.js';
+
+export type {
+  DiscoveryReadDecision,
+  DiscoveryReadExtractionResult,
+  ExtractDiscoveryReadInput,
+  SuccessfulActionResult,
+} from './read-extraction.js';
 
 export { evaluateDiscoveryActionPolicy } from './discovery-policy-gate.js';
 
