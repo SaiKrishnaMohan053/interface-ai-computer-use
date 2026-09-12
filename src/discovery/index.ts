@@ -51,6 +51,13 @@ export {
   recordDiscoveryObservationFingerprint,
 } from './run-state.js';
 
+export {
+  KNOWN_SAFE_DEMO_DIALOG_TITLE,
+  detectDiscoveryApplicationState,
+} from './runtime-application-state.js';
+
+export type { DiscoveryApplicationState } from './runtime-application-state.js';
+
 export type { CreateDiscoveryRunStateInput } from './run-state.js';
 
 export {

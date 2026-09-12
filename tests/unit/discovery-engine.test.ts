@@ -331,7 +331,9 @@ function policy(
       ruleId: `${action}-rule`,
       description: `${action} test rule`,
       match: { actions: [action], routeIds: ['bank'] },
-      riskLevel: 'READ_ONLY',
+      riskLevel: ['type', 'select', 'check', 'uncheck', 'dismiss'].includes(action)
+        ? 'REVERSIBLE'
+        : 'READ_ONLY',
       decision: overrides[action] ?? 'ALLOW',
     })),
   });

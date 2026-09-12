@@ -3,6 +3,7 @@ import { createDiscoveryObservationFingerprint } from './observation-fingerprint
 
 import { ConditionEvaluator } from '../conditions/index.js';
 import { parseRuntimeResult } from '../runtime/index.js';
+import { detectDiscoveryApplicationState } from './runtime-application-state.js';
 import type {
   CoordinatedRunContext,
   RunCoordinator,
@@ -322,6 +323,131 @@ export class DiscoveryEngine {
           eventType: 'observation',
           result: agentObservation,
         });
+
+        const applicationState = detectDiscoveryApplicationState(agentObservation);
+
+        if (applicationState.kind === 'permission_denied') {
+          return this.finishBusinessOutcome(context, state, applicationState.message);
+        }
+
+        if (applicationState.kind === 'session_expired') {
+          return this.finishFailure(context, state, {
+            code: 'SESSION_EXPIRED_UNRECOVERABLE',
+            message: applicationState.message,
+            expected: 'an active application session',
+            observed: 'SESSION_EXPIRED',
+          });
+        }
+
+        if (applicationState.kind === 'application_error') {
+          return this.finishFailure(context, state, {
+            code: 'APPLICATION_ERROR',
+            message: applicationState.message,
+            expected: 'an available application',
+            observed: 'APPLICATION_ERROR',
+          });
+        }
+
+        if (applicationState.kind === 'unsafe_dialog') {
+          const dialogTitle =
+            applicationState.dialog.kind === 'surface'
+              ? applicationState.dialog.title
+              : applicationState.dialog.message;
+
+          return this.escalate(
+            context,
+            state,
+            createDiscoveryIntervention(
+              {
+                source: 'unsafe_dialog',
+                goal: request.goal,
+                step: state.step,
+                observationId: agentObservation.observationId,
+                location: locationOf(agentObservation),
+                dialogKind: applicationState.dialog.kind,
+                dialogTitle,
+              },
+              { createId: this.createId },
+            ),
+          );
+        }
+
+        if (applicationState.kind === 'loading') {
+          const loadingDecision = {
+            kind: 'wait' as const,
+            condition: {
+              kind: 'loadingComplete' as const,
+            },
+            reason: 'Wait for the current application load to finish',
+          };
+
+          const timeoutMs = this.remainingTimeout(state);
+
+          const result = await new ConditionEvaluator(context.surface).evaluate(
+            {
+              conditionId: this.createId(),
+              condition: loadingDecision.condition,
+            },
+            {
+              timeoutMs,
+              pollIntervalMs: Math.min(this.options.conditionPollIntervalMs, timeoutMs),
+              ...(runOptions.signal === undefined ? {} : { signal: runOptions.signal }),
+            },
+          );
+
+          await context.evidenceRecorder.recordEvent({
+            step: state.step,
+            eventType: 'condition',
+            action: loadingDecision,
+            result,
+            evidenceRefs: result.evidenceRefs,
+          });
+
+          if (result.status === 'error') {
+            return this.finishFailure(context, state, mapSurfaceFailure(result.error));
+          }
+
+          if (result.status === 'not_met') {
+            return this.finishFailure(context, state, {
+              code: 'RUN_TIMEOUT',
+              message: 'Application did not finish loading within the discovery budget',
+              expected: 'loading complete',
+              observed: result.observed,
+            });
+          }
+
+          memory.recentAction = null;
+          memory.recentCondition = {
+            status: 'passed',
+            conditionKind: 'loadingComplete',
+            summary: 'Application finished loading',
+          };
+          memory.recentError = null;
+
+          appendHistory(memory, {
+            step: state.step,
+            decisionKind: 'wait',
+            outcome: 'success',
+            summary: 'System waited for application loading to complete',
+          });
+
+          appendDiscoveryStep(state, {
+            step: state.step,
+            observationId: agentObservation.observationId,
+            observationFingerprint: createDiscoveryObservationFingerprint(agentObservation),
+            decision: loadingDecision,
+            outcome: 'action_succeeded',
+            result: result.observed,
+          });
+
+          continue;
+        }
+
+        /*
+         * known_safe_dialog deliberately falls through.
+         * The model may request dismissal, but policy and target resolution
+         * remain authoritative.
+         */
 
         const currentFingerprint = createDiscoveryObservationFingerprint(agentObservation);
         recordDiscoveryObservationFingerprint(state, currentFingerprint);
@@ -864,6 +990,38 @@ export class DiscoveryEngine {
       recoverableConditions: [],
       status: 'success',
       outputs,
+    });
+  }
+
+  private async finishBusinessOutcome(
+    context: DiscoveryContext,
+    state: DiscoveryRunState,
+    message: string,
+  ): Promise<DiscoveryResult> {
+    const outcome = {
+      code: 'PERMISSION_DENIED' as const,
+      message,
+      details: {
+        phase: 'discovery_loop',
+        step: state.step,
+      },
+    };
+
+    const summary = await this.dependencies.coordinator.finish({
+      status: 'business_outcome',
+      result: { outcome },
+    });
+
+    return parseRuntimeResult({
+      runId: summary.runId,
+      startedAt: summary.startedAt,
+      finishedAt: summary.finishedAt,
+      durationMs: summary.durationMs,
+      evidenceRefs: summary.evidenceRefs,
+      sessionId: context.sessionManager.sessionId,
+      recoverableConditions: [],
+      status: 'business_outcome',
+      outcome,
     });
   }
 

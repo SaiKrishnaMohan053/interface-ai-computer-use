@@ -11,6 +11,7 @@ export const DISCOVERY_ESCALATION_SOURCES = [
   'policy',
   'repeated_state',
   'unsafe_ambiguity',
+  'unsafe_dialog',
 ] as const;
 
 export type DiscoveryEscalationSource = (typeof DISCOVERY_ESCALATION_SOURCES)[number];
@@ -57,6 +58,13 @@ export type DiscoveryEscalationTrigger =
       readonly targetDescription: string;
 
       readonly resolutionAttempts: number;
+    })
+  | (EscalationTriggerBase & {
+      readonly source: 'unsafe_dialog';
+
+      readonly dialogKind: 'native' | 'surface';
+
+      readonly dialogTitle: string | null;
     });
 
 export type DiscoveryIntervention = RuntimeInterventionRequired['intervention'];
@@ -222,6 +230,21 @@ export function createDiscoveryIntervention(
           resolutionAttempts: trigger.resolutionAttempts,
 
           failureCode: 'TARGET_AMBIGUOUS',
+        }),
+      });
+
+    case 'unsafe_dialog':
+      return Object.freeze({
+        interventionId,
+        code: 'AUTOMATION_STUCK',
+        message: 'Discovery encountered an unknown or potentially risky dialog',
+        requestedOwner: 'HUMAN',
+        resumable: false,
+        context: Object.freeze({
+          ...commonContext,
+          requestedBy: 'application_state_detector',
+          dialogKind: trigger.dialogKind,
+          dialogTitle: trigger.dialogTitle,
         }),
       });
   }
