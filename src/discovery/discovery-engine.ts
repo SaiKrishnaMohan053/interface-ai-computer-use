@@ -29,12 +29,16 @@ import type { TranslatableDiscoveryDecision } from './action-translator.js';
 import { evaluateDiscoveryActionPolicy } from './discovery-policy-gate.js';
 import { verifyDiscoveryCompletion } from './completion-verifier.js';
 import { parseDiscoveryRequest, resolveDiscoveryRunConfig } from './contracts.js';
-import { parseDiscoveryDecision } from './decision.js';
 import type { DiscoveryDecision } from './decision.js';
 import { createDiscoveryIntervention } from './escalation.js';
 import type { DiscoveryIntervention } from './escalation.js';
 import { createDiscoveryModelInput } from './model/index.js';
 import type { DiscoveryDecisionModel, DiscoveryHistoryEntry } from './model/index.js';
+import {
+  DEFAULT_DISCOVERY_MODEL_FORMAT_RETRIES,
+  DiscoveryDecisionValidationError,
+  requestValidatedDiscoveryDecision,
+} from './model-decision-validation.js';
 import { projectObservationForAgent } from './observation-projector.js';
 import { extractDiscoveryRead, retainDiscoveryExtraction } from './read-extraction.js';
 import {
@@ -90,6 +94,7 @@ export interface DiscoveryEngineOptions {
   conditionPollIntervalMs?: number;
   observationMaxTextLength?: number;
   observationMaxControls?: number;
+  modelFormatRetries?: number;
   createId?: () => string;
   now?: () => Date;
 }
@@ -105,11 +110,20 @@ interface ResolvedOptions {
   readonly conditionPollIntervalMs: number;
   readonly observationMaxTextLength: number;
   readonly observationMaxControls: number;
+  readonly modelFormatRetries: number;
 }
 
 function boundedInteger(value: number, field: string, maximum: number): number {
   if (!Number.isInteger(value) || value < 1 || value > maximum) {
     throw new RangeError(`${field} must be an integer between 1 and ${maximum}`);
+  }
+
+  return value;
+}
+
+function boundedNonnegativeInteger(value: number, field: string, maximum: number): number {
+  if (!Number.isInteger(value) || value < 0 || value > maximum) {
+    throw new RangeError(`${field} must be an integer between 0 and ${maximum}`);
   }
 
   return value;
@@ -219,6 +233,11 @@ export class DiscoveryEngine {
         'observationMaxControls',
         2_000,
       ),
+      modelFormatRetries: boundedNonnegativeInteger(
+        options.modelFormatRetries ?? DEFAULT_DISCOVERY_MODEL_FORMAT_RETRIES,
+        'modelFormatRetries',
+        3,
+      ),
     };
     this.createId = options.createId ?? randomUUID;
     this.now = options.now ?? (() => new Date());
@@ -326,20 +345,44 @@ export class DiscoveryEngine {
           );
         }
 
-        const decision = parseDiscoveryDecision(
-          await this.dependencies.model.decide(
-            createDiscoveryModelInput({
+        let decision: DiscoveryDecision;
+        let validationAttempts: number;
+
+        try {
+          const validated = await requestValidatedDiscoveryDecision({
+            model: this.dependencies.model,
+
+            modelInput: createDiscoveryModelInput({
               observation: agentObservation,
               history: memory.history,
             }),
-          ),
-        );
+
+            maxFormatRetries: this.options.modelFormatRetries,
+          });
+
+          decision = validated.decision;
+          validationAttempts = validated.attempts;
+        } catch (error) {
+          if (error instanceof DiscoveryDecisionValidationError) {
+            return this.finishFailure(context, state, {
+              code: 'MODEL_DECISION_VALIDATION_FAILED',
+              message: error.message,
+              expected: 'one valid DiscoveryDecision',
+              observed: {
+                attempts: error.attempts,
+                issues: [...error.issues],
+              },
+            });
+          }
+
+          throw error;
+        }
 
         await context.evidenceRecorder.recordEvent({
           step: state.step,
           eventType: 'model_decision',
           action: decision,
-          result: { accepted: true },
+          result: { accepted: true, validationAttempts },
         });
 
         if (decision.kind === 'complete') {

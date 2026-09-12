@@ -90,6 +90,15 @@ export { createDiscoveryObservationFingerprint } from './observation-fingerprint
 export * from './model/index.js';
 
 export {
+  DEFAULT_DISCOVERY_MODEL_FORMAT_RETRIES,
+  MAX_DISCOVERY_MODEL_FORMAT_RETRIES,
+  DiscoveryDecisionValidationError,
+  requestValidatedDiscoveryDecision,
+} from './model-decision-validation.js';
+
+export type { ValidatedDiscoveryDecision } from './model-decision-validation.js';
+
+export {
   TRANSLATABLE_DISCOVERY_DECISION_KINDS,
   DiscoveryActionTranslationError,
   getDiscoveryDecisionTarget,

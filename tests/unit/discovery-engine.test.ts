@@ -232,7 +232,7 @@ class FakeSurface implements SurfaceAdapter<TargetStrategy> {
 class FakeModel implements DiscoveryDecisionModel {
   readonly inputs: DiscoveryModelInput[] = [];
 
-  constructor(private readonly decisions: DiscoveryDecision[]) {}
+  constructor(private readonly decisions: unknown[]) {}
 
   decide(input: DiscoveryModelInput): Promise<DiscoveryDecision> {
     this.inputs.push(input);
@@ -243,7 +243,7 @@ class FakeModel implements DiscoveryDecisionModel {
       throw new Error('Fake model decision queue was exhausted');
     }
 
-    return Promise.resolve(decision);
+    return Promise.resolve(decision as DiscoveryDecision);
   }
 }
 
@@ -352,7 +352,7 @@ function request() {
 }
 
 function engine(
-  decisions: DiscoveryDecision[],
+  decisions: unknown[],
   options: {
     readonly surface?: FakeSurface;
     readonly policyEngine?: PolicyEngine;
@@ -405,6 +405,36 @@ describe('DiscoveryEngine', () => {
 
     expect(fixture.surface.performed.map((entry) => entry.action.kind)).toEqual(['read']);
     expect(fixture.coordinator.finishedStatuses).toEqual(['success']);
+  });
+
+  it('retries one invalid model decision and then returns a typed validation failure', async () => {
+    const fixture = engine([
+      {
+        kind: 'click',
+        reason: 'Missing target',
+      },
+      {
+        kind: 'unsupported-action',
+      },
+    ]);
+
+    await expect(fixture.discovery.run(request())).resolves.toMatchObject({
+      status: 'failure',
+
+      error: {
+        code: 'MODEL_DECISION_VALIDATION_FAILED',
+        expected: 'one valid DiscoveryDecision',
+
+        observed: {
+          attempts: 2,
+        },
+      },
+    });
+
+    expect(fixture.model.inputs).toHaveLength(2);
+    expect(fixture.surface.performed).toHaveLength(0);
+
+    expect(fixture.coordinator.finishedStatuses).toEqual(['failure']);
   });
 
   it('rejects unsupported completion and then escalates repeated state', async () => {
