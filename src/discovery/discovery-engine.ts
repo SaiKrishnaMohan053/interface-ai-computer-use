@@ -43,6 +43,10 @@ import {
 } from './run-state.js';
 
 import type { DiscoveryResult, DiscoveryRunState, DiscoveryStepRecord } from './run-state.js';
+import {
+  evaluateDiscoveryLoopBudget,
+  isHardDiscoveryActionFailure,
+} from './stopping-conditions.js';
 
 export const DEFAULT_DISCOVERY_MAX_STEPS = 25;
 export const DEFAULT_DISCOVERY_MAX_REPEATED_STATES = 3;
@@ -269,16 +273,26 @@ export class DiscoveryEngine {
       const entryResult = await this.ensureEntry(context, state, runOptions.signal);
       if (entryResult !== null) return entryResult;
 
-      while (state.step < state.config.maxSteps) {
-        if (this.stopped(state, runOptions.signal)) {
+      while (true) {
+        const budgetStop = evaluateDiscoveryLoopBudget({
+          step: state.step,
+          maxSteps: state.config.maxSteps,
+          nowMs: this.now().getTime(),
+          deadlineAt: state.deadlineAt,
+          aborted: runOptions.signal?.aborted === true,
+        });
+
+        if (budgetStop !== null) {
           return this.finishFailure(context, state, {
             code: 'RUN_TIMEOUT',
             message:
-              runOptions.signal?.aborted === true
+              budgetStop === 'cancelled'
                 ? 'Discovery was cancelled'
-                : 'Discovery exceeded its runtime limit',
+                : budgetStop === 'max_steps'
+                  ? 'Discovery exhausted its maximum step budget'
+                  : 'Discovery exceeded its runtime limit',
             expected: 'active discovery budget',
-            observed: runOptions.signal?.aborted === true ? 'aborted' : 'deadline exceeded',
+            observed: budgetStop,
           });
         }
 
@@ -414,13 +428,6 @@ export class DiscoveryEngine {
         );
         if (terminal !== null) return terminal;
       }
-
-      return this.finishFailure(context, state, {
-        code: 'RUN_TIMEOUT',
-        message: 'Discovery exhausted its maximum step budget',
-        expected: `fewer than ${state.config.maxSteps} steps`,
-        observed: state.step,
-      });
     } catch {
       const summary = await this.dependencies.coordinator.fail({
         code: 'APPLICATION_ERROR',
@@ -640,6 +647,9 @@ export class DiscoveryEngine {
             ),
           );
         }
+        if (isHardDiscoveryActionFailure(resolution.error)) {
+          return this.finishFailure(context, state, mapSurfaceFailure(resolution.error));
+        }
         this.recordFailure(state, memory, observation, decision, resolution.error);
         await context.evidenceRecorder.recordEvent({
           step: state.step,
@@ -671,6 +681,10 @@ export class DiscoveryEngine {
       result,
       evidenceRefs: result.evidenceRefs,
     });
+
+    if (result.status === 'failure' && isHardDiscoveryActionFailure(result.error)) {
+      return this.finishFailure(context, state, mapSurfaceFailure(result.error));
+    }
     this.applyResult(state, memory, observation, decision, result);
     return null;
   }
@@ -801,10 +815,6 @@ export class DiscoveryEngine {
   private remainingTimeout(state: DiscoveryRunState): number {
     const remaining = Date.parse(state.deadlineAt) - this.now().getTime();
     return Math.max(1, Math.min(this.options.operationTimeoutMs, remaining));
-  }
-
-  private stopped(state: DiscoveryRunState, signal: AbortSignal | undefined): boolean {
-    return signal?.aborted === true || this.now().getTime() >= Date.parse(state.deadlineAt);
   }
 
   private async finishSuccess(

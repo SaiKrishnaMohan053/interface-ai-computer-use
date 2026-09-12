@@ -53,6 +53,17 @@ export {
 
 export type { CreateDiscoveryRunStateInput } from './run-state.js';
 
+export {
+  HARD_DISCOVERY_ACTION_FAILURE_CODES,
+  evaluateDiscoveryLoopBudget,
+  isHardDiscoveryActionFailure,
+} from './stopping-conditions.js';
+
+export type {
+  DiscoveryLoopBudgetInput,
+  DiscoveryLoopBudgetStopReason,
+} from './stopping-conditions.js';
+
 export { COMPLETION_REJECTION_CODES, verifyDiscoveryCompletion } from './completion-verifier.js';
 
 export type {

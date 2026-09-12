@@ -16,6 +16,7 @@ import type {
   SurfaceAdapter,
   SurfaceObservation,
   SurfaceOperationOptions,
+  SurfaceFailure,
   TargetResolutionRequest,
   TargetResolutionResult,
 } from '../../src/surface/index.js';
@@ -103,6 +104,7 @@ class FakeSurface implements SurfaceAdapter<TargetStrategy> {
   readonly resolutionOutcomes: Array<'resolved' | 'ambiguous' | 'not_found'> = [];
   readonly resolutionRequests: TargetResolutionRequest<TargetStrategy>[] = [];
   readonly performed: ActionExecutionRequest[] = [];
+  actionFailure: SurfaceFailure | null = null;
 
   observe(options: ObservationOptions): Promise<ObservationResult> {
     void options;
@@ -149,6 +151,19 @@ class FakeSurface implements SurfaceAdapter<TargetStrategy> {
   ): Promise<ActionResult> {
     void options;
     this.performed.push(request);
+
+    if (this.actionFailure !== null) {
+      return Promise.resolve({
+        ...this.scope,
+        actionId: request.actionId,
+        startedAt: NOW,
+        finishedAt: NOW,
+        durationMs: 0,
+        evidenceRefs: [],
+        status: 'failure',
+        error: this.actionFailure,
+      });
+    }
 
     if (request.action.kind === 'navigate') {
       this.currentUrl = request.action.destination;
@@ -657,5 +672,39 @@ describe('DiscoveryEngine', () => {
       code: 'TARGET_NOT_FOUND',
       recoverable: true,
     });
+  });
+
+  it('terminates immediately when surface execution returns a hard action failure', async () => {
+    const surface = new FakeSurface();
+
+    surface.actionFailure = {
+      code: 'ACTION_FAILED',
+      message: 'The application rejected the action',
+      expected: 'successful click',
+      observed: 'application failure',
+    };
+
+    const fixture = engine(
+      [
+        {
+          kind: 'click',
+          target: buttonTarget,
+          reason: 'Open accounts',
+        },
+      ],
+      { surface },
+    );
+
+    await expect(fixture.discovery.run(request())).resolves.toMatchObject({
+      status: 'failure',
+      error: {
+        code: 'ACTION_FAILED',
+        message: 'The application rejected the action',
+      },
+    });
+
+    expect(surface.performed).toHaveLength(1);
+    expect(fixture.model.inputs).toHaveLength(1);
+    expect(fixture.coordinator.finishedStatuses).toEqual(['failure']);
   });
 });
