@@ -1,4 +1,5 @@
-import { createHash, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
+import { createDiscoveryObservationFingerprint } from './observation-fingerprint.js';
 
 import { ConditionEvaluator } from '../conditions/index.js';
 import { parseRuntimeResult } from '../runtime/index.js';
@@ -118,21 +119,6 @@ function locationOf(observation: AgentObservation): string {
   return observation.location.kind === 'web'
     ? observation.location.url
     : `${observation.location.applicationId}: ${observation.location.windowTitle}`;
-}
-
-function fingerprint(observation: AgentObservation): string {
-  return createHash('sha256')
-    .update(
-      JSON.stringify({
-        location: observation.location,
-        text: observation.visibleTextSummary,
-        controls: observation.controls,
-        dialogs: observation.dialogs,
-        loading: observation.loading,
-        extractedValues: observation.extractedValues,
-      }),
-    )
-    .digest('hex');
 }
 
 function mapSurfaceFailure(error: SurfaceFailure): RuntimeFailureInput {
@@ -318,7 +304,7 @@ export class DiscoveryEngine {
           result: agentObservation,
         });
 
-        const currentFingerprint = fingerprint(agentObservation);
+        const currentFingerprint = createDiscoveryObservationFingerprint(agentObservation);
         recordDiscoveryObservationFingerprint(state, currentFingerprint);
 
         if (state.repeatedStateCount >= this.options.maxRepeatedStates) {
@@ -362,7 +348,7 @@ export class DiscoveryEngine {
             appendDiscoveryStep(state, {
               step: state.step,
               observationId: agentObservation.observationId,
-              observationFingerprint: currentFingerprint,
+              observationFingerprint: createDiscoveryObservationFingerprint(agentObservation),
               decision,
               outcome: 'completed',
               result: verification.outputs,
@@ -386,7 +372,7 @@ export class DiscoveryEngine {
           appendDiscoveryStep(state, {
             step: state.step,
             observationId: agentObservation.observationId,
-            observationFingerprint: currentFingerprint,
+            observationFingerprint: createDiscoveryObservationFingerprint(agentObservation),
             decision,
             outcome: 'completion_rejected',
             result: verification.issues.map((issue) => ({ ...issue })),
@@ -612,7 +598,7 @@ export class DiscoveryEngine {
       appendDiscoveryStep(state, {
         step: state.step,
         observationId: observation.observationId,
-        observationFingerprint: fingerprint(observation),
+        observationFingerprint: createDiscoveryObservationFingerprint(observation),
         decision,
         outcome: result.status === 'passed' ? 'action_succeeded' : 'action_failed',
         result: result.observed,
@@ -745,7 +731,7 @@ export class DiscoveryEngine {
     appendDiscoveryStep(state, {
       step: state.step,
       observationId: observation.observationId,
-      observationFingerprint: fingerprint(observation),
+      observationFingerprint: createDiscoveryObservationFingerprint(observation),
       decision,
       outcome,
       result: output,
@@ -782,7 +768,7 @@ export class DiscoveryEngine {
     appendDiscoveryStep(state, {
       step: state.step,
       observationId: observation.observationId,
-      observationFingerprint: fingerprint(observation),
+      observationFingerprint: createDiscoveryObservationFingerprint(observation),
       decision,
       outcome: 'action_failed',
       result: {

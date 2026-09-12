@@ -86,6 +86,7 @@ export type {
 
 export * from './agent-observation.js';
 export * from './observation-projector.js';
+export { createDiscoveryObservationFingerprint } from './observation-fingerprint.js';
 export * from './model/index.js';
 
 export {
