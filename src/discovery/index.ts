@@ -108,7 +108,10 @@ export {
   requestValidatedDiscoveryDecision,
 } from './model-decision-validation.js';
 
-export type { ValidatedDiscoveryDecision } from './model-decision-validation.js';
+export type {
+  InvalidDiscoveryDecisionAttempt,
+  ValidatedDiscoveryDecision,
+} from './model-decision-validation.js';
 
 export {
   TRANSLATABLE_DISCOVERY_DECISION_KINDS,
@@ -169,6 +172,18 @@ export {
 } from './discovery-trace.js';
 
 export type { DiscoveryTraceRecord, DiscoveryTraceSink } from './discovery-trace.js';
+
+export {
+  DISCOVERY_EVIDENCE_EVENT_NAMES,
+  discoveryEvidenceEventSchema,
+  parseDiscoveryEvidenceEvent,
+  recordDiscoveryEvidenceEvent,
+} from './discovery-evidence-events.js';
+
+export type {
+  DiscoveryEvidenceEvent,
+  DiscoveryEvidenceEventSink,
+} from './discovery-evidence-events.js';
 
 export {
   DEFAULT_DISCOVERY_CONDITION_POLL_INTERVAL_MS,

@@ -30,6 +30,11 @@ export interface ValidatedDiscoveryDecision {
   readonly attempts: number;
 }
 
+export interface InvalidDiscoveryDecisionAttempt {
+  readonly attempt: number;
+  readonly issues: readonly string[];
+}
+
 function validationIssues(error: ZodError | DiscoveryModelResponseError): readonly string[] {
   if (error instanceof ZodError) {
     return error.issues.slice(0, 10).map((issue) => {
@@ -51,6 +56,9 @@ export async function requestValidatedDiscoveryDecision(input: {
   readonly model: DiscoveryDecisionModel;
   readonly modelInput: DiscoveryModelInput;
   readonly maxFormatRetries?: number;
+  readonly onRequest?: (attempt: number) => void | Promise<void>;
+
+  readonly onInvalid?: (invalid: InvalidDiscoveryDecisionAttempt) => void | Promise<void>;
 }): Promise<ValidatedDiscoveryDecision> {
   const maxFormatRetries = input.maxFormatRetries ?? DEFAULT_DISCOVERY_MODEL_FORMAT_RETRIES;
 
@@ -67,6 +75,7 @@ export async function requestValidatedDiscoveryDecision(input: {
   let lastError: ZodError | DiscoveryModelResponseError | null = null;
 
   for (let attempt = 1; attempt <= maxFormatRetries + 1; attempt += 1) {
+    await input.onRequest?.(attempt);
     try {
       const rawDecision: unknown = await input.model.decide(input.modelInput);
 
@@ -80,6 +89,10 @@ export async function requestValidatedDiscoveryDecision(input: {
       }
 
       lastError = error;
+      await input.onInvalid?.({
+        attempt,
+        issues: validationIssues(error),
+      });
     }
   }
 

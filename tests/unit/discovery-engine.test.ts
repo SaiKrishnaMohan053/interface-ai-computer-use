@@ -14,9 +14,9 @@ import type {
   ObservationOptions,
   ObservationResult,
   SurfaceAdapter,
+  SurfaceFailure,
   SurfaceObservation,
   SurfaceOperationOptions,
-  SurfaceFailure,
   TargetResolutionRequest,
   TargetResolutionResult,
 } from '../../src/surface/index.js';
@@ -29,11 +29,11 @@ import type {
   DiscoveryModelInput,
 } from '../../src/discovery/index.js';
 import type {
+  CaptureScreenshotInput,
   EvidenceRecorder,
   FinishRunInput,
   RecordEventInput,
   RunEvidenceSummary,
-  CaptureScreenshotInput,
 } from '../../src/evidence/index.js';
 import type { SessionManager } from '../../src/session/index.js';
 
@@ -102,18 +102,19 @@ class FakeSurface implements SurfaceAdapter<TargetStrategy> {
   };
 
   currentUrl = ENTRY_URL;
+  observationOverride: SurfaceObservation | null = null;
   resolution: 'resolved' | 'ambiguous' | 'not_found' = 'resolved';
   readonly resolutionOutcomes: Array<'resolved' | 'ambiguous' | 'not_found'> = [];
   readonly resolutionRequests: TargetResolutionRequest<TargetStrategy>[] = [];
   readonly performed: ActionExecutionRequest[] = [];
-  actionFailure: SurfaceFailure | null = null;
   readonly evidenceRequests: EvidenceCaptureRequest[] = [];
+  actionFailure: SurfaceFailure | null = null;
 
   observe(options: ObservationOptions): Promise<ObservationResult> {
     void options;
     return Promise.resolve({
       status: 'success',
-      observation: observation(this.currentUrl),
+      observation: this.observationOverride ?? observation(this.currentUrl),
     });
   }
 
@@ -172,6 +173,13 @@ class FakeSurface implements SurfaceAdapter<TargetStrategy> {
       this.currentUrl = request.action.destination;
     }
 
+    if (request.action.kind === 'dismiss' && this.observationOverride !== null) {
+      this.observationOverride = {
+        ...this.observationOverride,
+        dialogs: [],
+      };
+    }
+
     const output =
       request.action.kind === 'read'
         ? {
@@ -193,13 +201,23 @@ class FakeSurface implements SurfaceAdapter<TargetStrategy> {
     });
   }
 
-  evaluate(
+  async evaluate(
     request: ConditionEvaluationRequest,
     options: ConditionWaitOptions & { readonly signal?: AbortSignal },
   ): Promise<ConditionResult> {
-    void request;
-    void options;
-    return Promise.resolve({
+    const prepared = await request.prepare(options);
+
+    if (
+      prepared.status === 'ready' &&
+      prepared.condition.kind === 'loadingComplete' &&
+      this.observationOverride !== null
+    ) {
+      this.observationOverride = {
+        ...this.observationOverride,
+        loading: 'complete',
+      };
+    }
+    return {
       ...this.scope,
       conditionId: 'condition-1',
       startedAt: NOW,
@@ -211,7 +229,7 @@ class FakeSurface implements SurfaceAdapter<TargetStrategy> {
       evidenceRefs: [],
       status: 'passed',
       passed: true,
-    });
+    };
   }
 
   captureEvidence(
@@ -219,9 +237,7 @@ class FakeSurface implements SurfaceAdapter<TargetStrategy> {
     options: SurfaceOperationOptions,
   ): Promise<EvidenceCaptureResult> {
     void options;
-
     this.evidenceRequests.push(request);
-
     return Promise.resolve({
       status: 'success',
       evidence: {
@@ -257,7 +273,6 @@ class FakeCoordinator implements DiscoveryCoordinator {
   readonly events: RecordEventInput[] = [];
   readonly finishedStatuses: string[] = [];
   readonly screenshots: CaptureScreenshotInput[] = [];
-
   startOptions: StartCoordinatedRunOptions | null = null;
 
   constructor(
@@ -274,14 +289,11 @@ class FakeCoordinator implements DiscoveryCoordinator {
       },
       captureScreenshot: (input: CaptureScreenshotInput) => {
         this.screenshots.push(input);
-
-        const sequence = this.screenshots.length.toString().padStart(4, '0');
-
         return Promise.resolve({
-          evidenceId: `screenshot-${sequence}`,
+          evidenceId: `screenshot-${this.screenshots.length}`,
           runId: options.runId,
           kind: 'screenshot' as const,
-          relativePath: `${options.runId}/screenshots/` + `screenshot-${sequence}.png`,
+          relativePath: `${options.runId}/screenshots/screenshot-0001.png`,
           mediaType: 'image/png',
           capturedAt: input.capturedAt ?? NOW,
         });
@@ -411,39 +423,26 @@ describe('DiscoveryEngine', () => {
     const fixture = engine([
       {
         kind: 'read',
-
         target: readTarget,
-
         source: 'text',
-
         saveAs: 'savingsBalance',
-
         reason: 'Read the visible balance',
       },
       {
         kind: 'complete',
-
         summary: 'Read the Savings balance',
-
-        outputs: {
-          savingsBalance: '$12,840.50',
-        },
+        outputs: { savingsBalance: '$12,840.50' },
       },
     ]);
 
     await expect(fixture.discovery.run(request())).resolves.toMatchObject({
       status: 'success',
       steps: 2,
-
-      outputs: {
-        savingsBalance: '$12,840.50',
-      },
+      outputs: { savingsBalance: '$12,840.50' },
     });
 
     expect(fixture.surface.performed.map((entry) => entry.action.kind)).toEqual(['read']);
-
     expect(fixture.coordinator.finishedStatuses).toEqual(['success']);
-
     const traceKinds = fixture.coordinator.events
       .filter((event) => event.eventType === 'discovery_trace')
       .map((event) =>
@@ -451,7 +450,6 @@ describe('DiscoveryEngine', () => {
           ? event.result.kind
           : null,
       );
-
     expect(traceKinds).toEqual(
       expect.arrayContaining([
         'observation',
@@ -460,6 +458,21 @@ describe('DiscoveryEngine', () => {
         'target_resolution',
         'action_result',
         'runtime_event',
+      ]),
+    );
+
+    expect(fixture.coordinator.events.map((event) => event.eventType)).toEqual(
+      expect.arrayContaining([
+        'discovery.started',
+        'observation.captured',
+        'model.decision.requested',
+        'model.decision.received',
+        'policy.evaluated',
+        'target.resolved',
+        'action.started',
+        'action.completed',
+        'value.extracted',
+        'discovery.completed',
       ]),
     );
   });
@@ -476,9 +489,7 @@ describe('DiscoveryEngine', () => {
       {
         kind: 'complete',
         summary: 'Read the Savings balance',
-        outputs: {
-          savingsBalance: '$12,840.50',
-        },
+        outputs: { savingsBalance: '$12,840.50' },
       },
     ]);
 
@@ -488,71 +499,24 @@ describe('DiscoveryEngine', () => {
         evidenceRoot: 'evidence',
         screenshotEvidence: 'synthetic_fixture',
       }),
-    ).resolves.toMatchObject({
-      status: 'success',
-    });
+    ).resolves.toMatchObject({ status: 'success' });
 
     expect(fixture.coordinator.startOptions).toMatchObject({
       runId: 'discovery-lookup-savings-balance',
       evidenceRoot: 'evidence',
     });
-
     expect(fixture.surface.evidenceRequests).toEqual([
-      {
-        kind: 'screenshot',
-        extent: 'viewport',
-      },
-      {
-        kind: 'screenshot',
-        extent: 'viewport',
-      },
+      { kind: 'screenshot', extent: 'viewport' },
+      { kind: 'screenshot', extent: 'viewport' },
     ]);
-
     expect(fixture.coordinator.screenshots).toHaveLength(2);
-
     expect(fixture.coordinator.screenshots[0]?.dataHandling).toBe('SYNTHETIC_FIXTURE_ONLY');
 
     const observationEvents = fixture.coordinator.events.filter(
       (event) => event.eventType === 'observation',
     );
-
     expect(observationEvents).toHaveLength(2);
-
-    expect(observationEvents[0]?.evidenceRefs).toMatchObject([
-      {
-        kind: 'screenshot',
-      },
-    ]);
-  });
-
-  it('retries one invalid model decision and then returns a typed validation failure', async () => {
-    const fixture = engine([
-      {
-        kind: 'click',
-        reason: 'Missing target',
-      },
-      {
-        kind: 'unsupported-action',
-      },
-    ]);
-
-    await expect(fixture.discovery.run(request())).resolves.toMatchObject({
-      status: 'failure',
-
-      error: {
-        code: 'MODEL_DECISION_VALIDATION_FAILED',
-        expected: 'one valid DiscoveryDecision',
-
-        observed: {
-          attempts: 2,
-        },
-      },
-    });
-
-    expect(fixture.model.inputs).toHaveLength(2);
-    expect(fixture.surface.performed).toHaveLength(0);
-
-    expect(fixture.coordinator.finishedStatuses).toEqual(['failure']);
+    expect(observationEvents[0]?.evidenceRefs).toMatchObject([{ kind: 'screenshot' }]);
   });
 
   it('rejects unsupported completion and then escalates repeated state', async () => {
@@ -584,6 +548,52 @@ describe('DiscoveryEngine', () => {
           event.result !== null &&
           'accepted' in event.result &&
           event.result.accepted === false,
+      ),
+    ).toBe(true);
+  });
+
+  it('rejects a read-backed Savings completion without compatible final context', async () => {
+    const surface = new FakeSurface();
+    surface.observationOverride = {
+      ...observation(),
+      location: {
+        kind: 'web',
+        url: 'https://bank.test/member/alex/accounts',
+        title: 'Alex Morgan Accounts',
+      },
+      visibleText: 'Available amount\n$12,840.50',
+    };
+    const fixture = engine(
+      [
+        {
+          kind: 'read',
+          target: readTarget,
+          source: 'text',
+          saveAs: 'savingsBalance',
+          reason: 'Read the visible amount',
+        },
+        {
+          kind: 'complete',
+          summary: 'Claimed a Savings balance outside Savings context',
+          outputs: { savingsBalance: '$12,840.50' },
+        },
+      ],
+      { surface, maxRepeatedStates: 2 },
+    );
+
+    await expect(fixture.discovery.run(request())).resolves.toMatchObject({
+      status: 'intervention_required',
+      intervention: {
+        code: 'AUTOMATION_STUCK',
+        context: { source: 'repeated_state' },
+      },
+    });
+
+    expect(
+      fixture.coordinator.events.some(
+        (event) =>
+          event.eventType === 'model_decision' &&
+          JSON.stringify(event.result).includes('FINAL_OBSERVATION_CONTEXT_MISMATCH'),
       ),
     ).toBe(true);
   });
@@ -824,7 +834,6 @@ describe('DiscoveryEngine', () => {
 
   it('terminates immediately when surface execution returns a hard action failure', async () => {
     const surface = new FakeSurface();
-
     surface.actionFailure = {
       code: 'ACTION_FAILED',
       message: 'The application rejected the action',
@@ -854,5 +863,195 @@ describe('DiscoveryEngine', () => {
     expect(surface.performed).toHaveLength(1);
     expect(fixture.model.inputs).toHaveLength(1);
     expect(fixture.coordinator.finishedStatuses).toEqual(['failure']);
+  });
+
+  it('retries one invalid model decision and then returns a typed validation failure', async () => {
+    const fixture = engine([
+      { kind: 'click', reason: 'Missing target' },
+      { kind: 'unsupported-action' },
+    ]);
+
+    await expect(fixture.discovery.run(request())).resolves.toMatchObject({
+      status: 'failure',
+      error: {
+        code: 'MODEL_DECISION_VALIDATION_FAILED',
+        expected: 'one valid DiscoveryDecision',
+        observed: { attempts: 2 },
+      },
+    });
+
+    expect(fixture.model.inputs).toHaveLength(2);
+    expect(fixture.surface.performed).toHaveLength(0);
+    expect(fixture.coordinator.finishedStatuses).toEqual(['failure']);
+    expect(
+      fixture.coordinator.events.filter((event) => event.eventType === 'model.decision.invalid'),
+    ).toHaveLength(2);
+    expect(fixture.coordinator.events.map((event) => event.eventType)).toContain(
+      'discovery.failed',
+    );
+  });
+
+  it('waits for a slow application state before asking the model', async () => {
+    const surface = new FakeSurface();
+    surface.observationOverride = {
+      ...observation(),
+      location: {
+        kind: 'web',
+        url: ENTRY_URL,
+        title: 'Loading | Demo Credit Union',
+      },
+      visibleText: 'Loading banking information...',
+      loading: 'loading',
+    };
+    const fixture = engine(
+      [
+        {
+          kind: 'escalate',
+          reasonCode: 'AUTOMATION_STUCK',
+          reason: 'Stop after the loading check',
+        },
+      ],
+      { surface },
+    );
+
+    await fixture.discovery.run(request());
+
+    expect(fixture.model.inputs).toHaveLength(1);
+    expect(fixture.coordinator.events.some((event) => event.eventType === 'condition')).toBe(true);
+    expect(surface.performed).toHaveLength(0);
+  });
+
+  it('returns a permission-denied business outcome without consulting the model', async () => {
+    const surface = new FakeSurface();
+    surface.observationOverride = {
+      ...observation(),
+      location: {
+        kind: 'web',
+        url: 'https://bank.test/member/alex',
+        title: 'PERMISSION_DENIED | Demo Credit Union',
+      },
+      visibleText: 'Access to this member is restricted.',
+    };
+    const fixture = engine([], { surface });
+
+    await expect(fixture.discovery.run(request())).resolves.toMatchObject({
+      status: 'business_outcome',
+      outcome: { code: 'PERMISSION_DENIED' },
+    });
+    expect(fixture.model.inputs).toHaveLength(0);
+    expect(surface.performed.map((entry) => entry.action.kind)).toEqual(['navigate']);
+  });
+
+  it.each([
+    ['SESSION_EXPIRED', 'SESSION_EXPIRED_UNRECOVERABLE'],
+    ['APPLICATION_ERROR', 'APPLICATION_ERROR'],
+  ] as const)('stops %s without blind model actions', async (title, failureCode) => {
+    const surface = new FakeSurface();
+    surface.observationOverride = {
+      ...observation(),
+      location: {
+        kind: 'web',
+        url: ENTRY_URL,
+        title: `${title} | Demo Credit Union`,
+      },
+      visibleText: title,
+    };
+    const fixture = engine([], { surface });
+
+    await expect(fixture.discovery.run(request())).resolves.toMatchObject({
+      status: 'failure',
+      error: { code: failureCode },
+    });
+    expect(fixture.model.inputs).toHaveLength(0);
+    expect(surface.performed).toHaveLength(0);
+  });
+
+  it('allows a known safe interstitial to follow normal model and policy handling', async () => {
+    const surface = new FakeSurface();
+    surface.observationOverride = {
+      ...observation(),
+      controls: [
+        {
+          controlId: 'continue-link',
+          name: 'Continue',
+          role: 'link',
+          visible: true,
+          enabled: true,
+          bounds: { x: 0, y: 0, width: 100, height: 30 },
+          kind: 'link',
+          destination: `${ENTRY_URL}?continue=1`,
+        },
+      ],
+      dialogs: [
+        {
+          kind: 'surface',
+          dialogId: 'service-notice',
+          presentation: 'interstitial',
+          title: 'Scheduled Service Notice',
+          text: 'This is a known demonstration notice.',
+          controlIds: ['continue-link'],
+        },
+      ],
+    };
+    const fixture = engine(
+      [
+        {
+          kind: 'dismiss',
+          dialog: {
+            kind: 'surface',
+            target: {
+              description: 'Continue from service notice',
+              strategies: [
+                {
+                  kind: 'role-name',
+                  role: 'link',
+                  name: { value: 'Continue', mode: 'exact', caseSensitive: false },
+                },
+              ],
+              cardinality: 'exactly-one',
+            },
+          },
+          reason: 'Dismiss the known safe service notice',
+        },
+        {
+          kind: 'escalate',
+          reasonCode: 'AUTOMATION_STUCK',
+          reason: 'Stop after dismissing the known notice',
+        },
+      ],
+      { surface },
+    );
+
+    await fixture.discovery.run(request());
+
+    expect(surface.performed.map((entry) => entry.action.kind)).toEqual(['dismiss']);
+    expect(fixture.model.inputs).toHaveLength(2);
+  });
+
+  it('escalates an unknown dialog before asking the model to act', async () => {
+    const surface = new FakeSurface();
+    surface.observationOverride = {
+      ...observation(),
+      dialogs: [
+        {
+          kind: 'native',
+          dialogId: 'unknown-confirmation',
+          type: 'confirm',
+          message: 'Approve this unknown operation?',
+          defaultValue: null,
+        },
+      ],
+    };
+    const fixture = engine([], { surface });
+
+    await expect(fixture.discovery.run(request())).resolves.toMatchObject({
+      status: 'intervention_required',
+      intervention: {
+        code: 'AUTOMATION_STUCK',
+        context: { source: 'unsafe_dialog' },
+      },
+    });
+    expect(fixture.model.inputs).toHaveLength(0);
+    expect(surface.performed).toHaveLength(0);
   });
 });

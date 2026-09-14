@@ -1,9 +1,7 @@
 import { randomUUID } from 'node:crypto';
-import { createDiscoveryObservationFingerprint } from './observation-fingerprint.js';
 
 import { ConditionEvaluator } from '../conditions/index.js';
 import { parseRuntimeResult } from '../runtime/index.js';
-import { detectDiscoveryApplicationState } from './runtime-application-state.js';
 import type {
   CoordinatedRunContext,
   RunCoordinator,
@@ -11,11 +9,11 @@ import type {
 } from '../runtime/index.js';
 import type {
   ActionResult,
+  EvidenceReference,
   JsonValue,
   ResolvedTarget,
   SurfaceFailure,
   SurfaceObservation,
-  EvidenceReference,
 } from '../surface/index.js';
 import { TargetResolver } from '../targeting/index.js';
 import type { TargetStrategy } from '../targeting/index.js';
@@ -29,6 +27,9 @@ import type {
 import { getDiscoveryDecisionTarget, translateDiscoveryDecision } from './action-translator.js';
 import type { TranslatableDiscoveryDecision } from './action-translator.js';
 import { evaluateDiscoveryActionPolicy } from './discovery-policy-gate.js';
+import { recordDiscoveryEvidenceEvent } from './discovery-evidence-events.js';
+import { withDiscoverySteps } from './discovery-result.js';
+import { discoveryDecisionRationale, recordDiscoveryTrace } from './discovery-trace.js';
 import { verifyDiscoveryGoalCompletion } from './completion-verifier.js';
 import { parseDiscoveryRequest, resolveDiscoveryRunConfig } from './contracts.js';
 import type { DiscoveryDecision } from './decision.js';
@@ -42,20 +43,19 @@ import {
   requestValidatedDiscoveryDecision,
 } from './model-decision-validation.js';
 import { projectObservationForAgent } from './observation-projector.js';
+import { createDiscoveryObservationFingerprint } from './observation-fingerprint.js';
+import { detectDiscoveryApplicationState } from './runtime-application-state.js';
 import { extractDiscoveryRead, retainDiscoveryExtraction } from './read-extraction.js';
 import {
   appendDiscoveryStep,
   createDiscoveryRunState,
   recordDiscoveryObservationFingerprint,
 } from './run-state.js';
-
 import type { DiscoveryResult, DiscoveryRunState, DiscoveryStepRecord } from './run-state.js';
 import {
   evaluateDiscoveryLoopBudget,
   isHardDiscoveryActionFailure,
 } from './stopping-conditions.js';
-import { withDiscoverySteps } from './discovery-result.js';
-import { discoveryDecisionRationale, recordDiscoveryTrace } from './discovery-trace.js';
 
 export const DEFAULT_DISCOVERY_MAX_STEPS = 25;
 export const DEFAULT_DISCOVERY_MAX_REPEATED_STATES = 3;
@@ -274,11 +274,7 @@ export class DiscoveryEngine {
       runId,
       mode: 'DISCOVERY',
       timeoutMs: requestedConfig.timeoutMs,
-      ...(runOptions.evidenceRoot === undefined
-        ? {}
-        : {
-            evidenceRoot: runOptions.evidenceRoot,
-          }),
+      ...(runOptions.evidenceRoot === undefined ? {} : { evidenceRoot: runOptions.evidenceRoot }),
       metadata: {
         application: request.target.application,
         goal: request.goal,
@@ -287,6 +283,14 @@ export class DiscoveryEngine {
     });
 
     try {
+      await recordDiscoveryEvidenceEvent(context.evidenceRecorder, {
+        name: 'discovery.started',
+        step: 0,
+        application: request.target.application,
+        maxSteps,
+        timeoutMs: requestedConfig.timeoutMs,
+      });
+
       const entryResult = await this.ensureEntry(context, state, runOptions.signal);
       if (entryResult !== null) return entryResult;
 
@@ -341,13 +345,21 @@ export class DiscoveryEngine {
           result: agentObservation,
           evidenceRefs: observationEvidenceRefs,
         });
-
         await recordDiscoveryTrace(context.evidenceRecorder, {
           kind: 'observation',
           step: state.step,
           observationId: agentObservation.observationId,
           location: agentObservation.location,
           summary: agentObservation.visibleTextSummary,
+          loading: agentObservation.loading,
+          controlCount: agentObservation.controls.length,
+          dialogCount: agentObservation.dialogs.length,
+          evidenceRefs: observationEvidenceRefs,
+        });
+        await recordDiscoveryEvidenceEvent(context.evidenceRecorder, {
+          name: 'observation.captured',
+          step: state.step,
+          observationId: agentObservation.observationId,
           loading: agentObservation.loading,
           controlCount: agentObservation.controls.length,
           dialogCount: agentObservation.dialogs.length,
@@ -405,19 +417,12 @@ export class DiscoveryEngine {
         if (applicationState.kind === 'loading') {
           const loadingDecision = {
             kind: 'wait' as const,
-            condition: {
-              kind: 'loadingComplete' as const,
-            },
+            condition: { kind: 'loadingComplete' as const },
             reason: 'Wait for the current application load to finish',
           };
-
           const timeoutMs = this.remainingTimeout(state);
-
           const result = await new ConditionEvaluator(context.surface).evaluate(
-            {
-              conditionId: this.createId(),
-              condition: loadingDecision.condition,
-            },
+            { conditionId: this.createId(), condition: loadingDecision.condition },
             {
               timeoutMs,
               pollIntervalMs: Math.min(this.options.conditionPollIntervalMs, timeoutMs),
@@ -461,14 +466,12 @@ export class DiscoveryEngine {
             summary: 'Application finished loading',
           };
           memory.recentError = null;
-
           appendHistory(memory, {
             step: state.step,
             decisionKind: 'wait',
             outcome: 'success',
             summary: 'System waited for application loading to complete',
           });
-
           appendDiscoveryStep(state, {
             step: state.step,
             observationId: agentObservation.observationId,
@@ -477,20 +480,19 @@ export class DiscoveryEngine {
             outcome: 'action_succeeded',
             result: result.observed,
           });
-
           continue;
         }
-
-        /*
-         * known_safe_dialog deliberately falls through.
-         * The model may request dismissal, but policy and target resolution
-         * remain authoritative.
-         */
 
         const currentFingerprint = createDiscoveryObservationFingerprint(agentObservation);
         recordDiscoveryObservationFingerprint(state, currentFingerprint);
 
         if (state.repeatedStateCount >= this.options.maxRepeatedStates) {
+          await recordDiscoveryEvidenceEvent(context.evidenceRecorder, {
+            name: 'stuck.detected',
+            step: state.step,
+            repeatedStateCount: state.repeatedStateCount,
+            threshold: this.options.maxRepeatedStates,
+          });
           return this.escalate(
             context,
             state,
@@ -515,15 +517,27 @@ export class DiscoveryEngine {
         try {
           const validated = await requestValidatedDiscoveryDecision({
             model: this.dependencies.model,
-
             modelInput: createDiscoveryModelInput({
               observation: agentObservation,
               history: memory.history,
             }),
-
             maxFormatRetries: this.options.modelFormatRetries,
+            onRequest: (attempt) =>
+              recordDiscoveryEvidenceEvent(context.evidenceRecorder, {
+                name: 'model.decision.requested',
+                step: state.step,
+                observationId: agentObservation.observationId,
+                historyCount: memory.history.length,
+                attempt,
+              }),
+            onInvalid: (invalid) =>
+              recordDiscoveryEvidenceEvent(context.evidenceRecorder, {
+                name: 'model.decision.invalid',
+                step: state.step,
+                attempt: invalid.attempt,
+                issues: [...invalid.issues],
+              }),
           });
-
           decision = validated.decision;
           validationAttempts = validated.attempts;
         } catch (error) {
@@ -548,12 +562,17 @@ export class DiscoveryEngine {
           action: decision,
           result: { accepted: true, validationAttempts },
         });
-
         await recordDiscoveryTrace(context.evidenceRecorder, {
           kind: 'model_decision',
           step: state.step,
           decision,
           rationale: discoveryDecisionRationale(decision),
+        });
+        await recordDiscoveryEvidenceEvent(context.evidenceRecorder, {
+          name: 'model.decision.received',
+          step: state.step,
+          decisionKind: decision.kind,
+          attempts: validationAttempts,
         });
 
         if (decision.kind === 'complete') {
@@ -566,7 +585,7 @@ export class DiscoveryEngine {
             appendDiscoveryStep(state, {
               step: state.step,
               observationId: agentObservation.observationId,
-              observationFingerprint: createDiscoveryObservationFingerprint(agentObservation),
+              observationFingerprint: currentFingerprint,
               decision,
               outcome: 'completed',
               result: verification.outputs,
@@ -590,7 +609,7 @@ export class DiscoveryEngine {
           appendDiscoveryStep(state, {
             step: state.step,
             observationId: agentObservation.observationId,
-            observationFingerprint: createDiscoveryObservationFingerprint(agentObservation),
+            observationFingerprint: currentFingerprint,
             decision,
             outcome: 'completion_rejected',
             result: verification.issues.map((issue) => ({ ...issue })),
@@ -633,11 +652,15 @@ export class DiscoveryEngine {
         if (terminal !== null) return terminal;
       }
     } catch {
+      await recordDiscoveryEvidenceEvent(context.evidenceRecorder, {
+        name: 'discovery.failed',
+        step: state.step,
+        errorCode: 'APPLICATION_ERROR',
+      }).catch(() => undefined);
       const summary = await this.dependencies.coordinator.fail({
         code: 'APPLICATION_ERROR',
         phase: 'discovery_loop',
       });
-
       return withDiscoverySteps(
         parseRuntimeResult({
           runId: summary.runId,
@@ -654,9 +677,7 @@ export class DiscoveryEngine {
             stepId: state.step === 0 ? null : String(state.step),
             expected: 'a valid bounded discovery transition',
             observed: 'unexpected internal failure',
-            details: {
-              phase: 'discovery_loop',
-            },
+            details: { phase: 'discovery_loop' },
           },
         }),
         state.step,
@@ -685,13 +706,19 @@ export class DiscoveryEngine {
       action: { kind: 'navigate', destination: state.request.target.entryUrl },
       policyDecision: policy,
     });
-
     await recordDiscoveryTrace(context.evidenceRecorder, {
       kind: 'policy_decision',
       step: 0,
       actionKind: 'navigate',
       systemRiskLevel: 'READ_ONLY',
       policyDecision: policy,
+    });
+    await recordDiscoveryEvidenceEvent(context.evidenceRecorder, {
+      name: 'policy.evaluated',
+      step: 0,
+      actionKind: 'navigate',
+      riskLevel: 'READ_ONLY',
+      decision: policy.decision,
     });
 
     if (policy.decision === 'DENY') {
@@ -721,9 +748,16 @@ export class DiscoveryEngine {
       );
     }
 
+    const actionId = this.createId();
+    await recordDiscoveryEvidenceEvent(context.evidenceRecorder, {
+      name: 'action.started',
+      step: 0,
+      actionId,
+      actionKind: 'navigate',
+    });
     const result = await context.surface.perform(
       {
-        actionId: this.createId(),
+        actionId,
         action: { kind: 'navigate', destination: state.request.target.entryUrl },
       },
       this.operationOptions(state, signal),
@@ -733,6 +767,14 @@ export class DiscoveryEngine {
       eventType: 'action',
       action: { kind: 'navigate', destination: state.request.target.entryUrl },
       result,
+      evidenceRefs: result.evidenceRefs,
+    });
+    await recordDiscoveryEvidenceEvent(context.evidenceRecorder, {
+      name: result.status === 'success' ? 'action.completed' : 'action.failed',
+      step: 0,
+      actionId,
+      actionKind: 'navigate',
+      ...(result.status === 'failure' ? { errorCode: result.error.code } : {}),
       evidenceRefs: result.evidenceRefs,
     });
     await recordDiscoveryTrace(context.evidenceRecorder, {
@@ -762,7 +804,6 @@ export class DiscoveryEngine {
       observation,
       decision,
     });
-
     const { actionKind, decision: policy } = evaluation;
 
     await context.evidenceRecorder.recordEvent({
@@ -771,13 +812,19 @@ export class DiscoveryEngine {
       action: decision,
       policyDecision: policy,
     });
-
     await recordDiscoveryTrace(context.evidenceRecorder, {
       kind: 'policy_decision',
       step: state.step,
       actionKind,
       systemRiskLevel: evaluation.risk.riskLevel,
       policyDecision: policy,
+    });
+    await recordDiscoveryEvidenceEvent(context.evidenceRecorder, {
+      name: 'policy.evaluated',
+      step: state.step,
+      actionKind,
+      riskLevel: evaluation.risk.riskLevel,
+      decision: policy.decision,
     });
 
     if (policy.decision === 'DENY') {
@@ -788,7 +835,6 @@ export class DiscoveryEngine {
         observed: decision.kind,
       });
     }
-
     if (policy.decision === 'REQUIRE_HUMAN') {
       return this.escalate(
         context,
@@ -803,30 +849,21 @@ export class DiscoveryEngine {
             policyDecision: policy,
             actionKind,
           },
-          {
-            createId: this.createId,
-          },
+          { createId: this.createId },
         ),
       );
     }
 
     if (decision.kind === 'wait') {
       const timeoutMs = this.remainingTimeout(state);
-
       const result = await new ConditionEvaluator(context.surface).evaluate(
-        {
-          conditionId: this.createId(),
-          condition: decision.condition,
-        },
+        { conditionId: this.createId(), condition: decision.condition },
         {
           timeoutMs,
-
           pollIntervalMs: Math.min(this.options.conditionPollIntervalMs, timeoutMs),
-
           ...(signal === undefined ? {} : { signal }),
         },
       );
-
       await context.evidenceRecorder.recordEvent({
         step: state.step,
         eventType: 'condition',
@@ -834,7 +871,6 @@ export class DiscoveryEngine {
         result,
         evidenceRefs: result.evidenceRefs,
       });
-
       await recordDiscoveryTrace(context.evidenceRecorder, {
         kind: 'condition_result',
         step: state.step,
@@ -843,86 +879,61 @@ export class DiscoveryEngine {
         observed: result.observed,
         evidenceRefs: result.evidenceRefs,
       });
-
       memory.recentAction = null;
-
       memory.recentCondition = {
         status: result.status,
         conditionKind: decision.condition.kind,
-
         summary: result.passed ? 'Condition passed' : 'Condition was not satisfied',
       };
-
       memory.recentError =
         result.status === 'error'
-          ? {
-              code: result.error.code,
-              message: result.error.message,
-              recoverable: true,
-            }
+          ? { code: result.error.code, message: result.error.message, recoverable: true }
           : null;
-
       appendHistory(memory, {
         step: state.step,
         decisionKind: 'wait',
-
         outcome:
           result.status === 'passed'
             ? 'success'
             : result.status === 'not_met'
               ? 'not_met'
               : 'failure',
-
         summary: memory.recentCondition.summary,
       });
-
       appendDiscoveryStep(state, {
         step: state.step,
         observationId: observation.observationId,
-
         observationFingerprint: createDiscoveryObservationFingerprint(observation),
-
         decision,
-
         outcome: result.status === 'passed' ? 'action_succeeded' : 'action_failed',
-
         result: result.observed,
       });
-
       return null;
     }
 
     const targetSpec = getDiscoveryDecisionTarget(decision);
-
     let target: ResolvedTarget | null = null;
 
     if (targetSpec !== null) {
       const resolution = await new TargetResolver(context.surface).resolve(
-        {
-          observationId: observation.observationId,
-
-          target: targetSpec,
-        },
+        { observationId: observation.observationId, target: targetSpec },
         this.operationOptions(state, signal),
       );
-
-      /*
-       * Target resolution trace contains semantic
-       * attempts only. It does not expose internal
-       * browser handles or ResolvedTarget.
-       */
       await recordDiscoveryTrace(context.evidenceRecorder, {
         kind: 'target_resolution',
         step: state.step,
-
         targetDescription: targetSpec.description,
-
         status: resolution.status,
         attempts: resolution.attempts,
-
         errorCode: resolution.status === 'failure' ? resolution.error.code : null,
       });
-
+      await recordDiscoveryEvidenceEvent(context.evidenceRecorder, {
+        name: 'target.resolved',
+        step: state.step,
+        status: resolution.status,
+        attemptCount: resolution.attempts.length,
+        errorCode: resolution.status === 'failure' ? resolution.error.code : null,
+      });
       if (resolution.status === 'failure') {
         if (resolution.error.code === 'TARGET_AMBIGUOUS') {
           return this.escalate(
@@ -931,31 +942,21 @@ export class DiscoveryEngine {
             createDiscoveryIntervention(
               {
                 source: 'unsafe_ambiguity',
-
                 goal: state.request.goal,
                 step: state.step,
-
                 observationId: observation.observationId,
-
                 location: locationOf(observation),
-
                 targetDescription: targetSpec.description,
-
                 resolutionAttempts: Math.max(1, resolution.attempts.length),
               },
-              {
-                createId: this.createId,
-              },
+              { createId: this.createId },
             ),
           );
         }
-
         if (isHardDiscoveryActionFailure(resolution.error)) {
           return this.finishFailure(context, state, mapSurfaceFailure(resolution.error));
         }
-
         this.recordFailure(state, memory, observation, decision, resolution.error);
-
         await context.evidenceRecorder.recordEvent({
           step: state.step,
           eventType: 'action',
@@ -963,17 +964,21 @@ export class DiscoveryEngine {
           target: targetSpec,
           result: resolution,
         });
-
         return null;
       }
-
       target = resolution.target;
     }
 
+    const actionId = this.createId();
+    await recordDiscoveryEvidenceEvent(context.evidenceRecorder, {
+      name: 'action.started',
+      step: state.step,
+      actionId,
+      actionKind: decision.kind,
+    });
     const result = await context.surface.perform(
       {
-        actionId: this.createId(),
-
+        actionId,
         action: translateDiscoveryDecision({
           decision,
           resolvedTarget: target,
@@ -981,7 +986,6 @@ export class DiscoveryEngine {
       },
       this.operationOptions(state, signal),
     );
-
     await context.evidenceRecorder.recordEvent({
       step: state.step,
       eventType: 'action',
@@ -990,50 +994,56 @@ export class DiscoveryEngine {
       result,
       evidenceRefs: result.evidenceRefs,
     });
-
     if (result.status === 'failure') {
+      await recordDiscoveryEvidenceEvent(context.evidenceRecorder, {
+        name: 'action.failed',
+        step: state.step,
+        actionId,
+        actionKind: decision.kind,
+        errorCode: result.error.code,
+        evidenceRefs: result.evidenceRefs,
+      });
       await recordDiscoveryTrace(context.evidenceRecorder, {
         kind: 'action_result',
         step: state.step,
         actionKind: decision.kind,
         status: 'failure',
         errorCode: result.error.code,
-
         extractedValues: state.extractedValues,
-
         evidenceRefs: result.evidenceRefs,
       });
     }
-
     if (result.status === 'failure' && isHardDiscoveryActionFailure(result.error)) {
       return this.finishFailure(context, state, mapSurfaceFailure(result.error));
     }
-
-    /*
-     * applyResult retains a successful read in
-     * state.extractedValues before the success
-     * trace is generated.
-     */
     this.applyResult(state, memory, observation, decision, result);
-
     if (result.status === 'success') {
+      await recordDiscoveryEvidenceEvent(context.evidenceRecorder, {
+        name: 'action.completed',
+        step: state.step,
+        actionId,
+        actionKind: decision.kind,
+        evidenceRefs: result.evidenceRefs,
+      });
+      if (decision.kind === 'read' && Object.hasOwn(state.extractedValues, decision.saveAs)) {
+        await recordDiscoveryEvidenceEvent(context.evidenceRecorder, {
+          name: 'value.extracted',
+          step: state.step,
+          outputName: decision.saveAs,
+          source: 'surface_read',
+          evidenceRefs: result.evidenceRefs,
+        });
+      }
       await recordDiscoveryTrace(context.evidenceRecorder, {
         kind: 'action_result',
         step: state.step,
         actionKind: decision.kind,
         status: 'success',
         errorCode: null,
-
         extractedValues: state.extractedValues,
-
-        /*
-         * Any screenshot references supplied by
-         * the evidence pipeline are retained.
-         */
         evidenceRefs: result.evidenceRefs,
       });
     }
-
     return null;
   }
 
@@ -1046,48 +1056,38 @@ export class DiscoveryEngine {
   ): void {
     if (result.status === 'failure') {
       this.recordFailure(state, memory, observation, decision, result.error);
-
       return;
     }
 
     let extraction: ReturnType<typeof extractDiscoveryRead> | null = null;
-
     if (decision.kind === 'read') {
       extraction = extractDiscoveryRead({
         decision,
         result,
         step: state.step,
-
         observationId: observation.observationId,
       });
-
       if (extraction.status === 'rejected') {
         this.recordFailure(state, memory, observation, decision, extraction.error);
-
         return;
       }
     }
 
     const summary = actionSummary(decision);
-
     const output: JsonValue =
       result.output.kind === 'read' ? result.output.value : { kind: 'none' };
-
     memory.recentAction = {
       status: 'success',
       actionKind: decision.kind,
       summary,
       output,
     };
-
     memory.recentCondition = null;
     memory.recentError = null;
 
     let outcome: DiscoveryStepRecord['outcome'] = 'action_succeeded';
-
     if (extraction?.status === 'extracted') {
       retainDiscoveryExtraction(state, extraction.record);
-
       outcome = 'value_extracted';
     }
 
@@ -1097,14 +1097,10 @@ export class DiscoveryEngine {
       outcome: 'success',
       summary,
     });
-
     appendDiscoveryStep(state, {
       step: state.step,
-
       observationId: observation.observationId,
-
       observationFingerprint: createDiscoveryObservationFingerprint(observation),
-
       decision,
       outcome,
       result: output,
@@ -1191,7 +1187,6 @@ export class DiscoveryEngine {
           error: captured.error,
         },
       });
-
       return [];
     }
 
@@ -1226,19 +1221,21 @@ export class DiscoveryEngine {
     state: DiscoveryRunState,
     outputs: Readonly<Record<string, JsonValue>>,
   ): Promise<DiscoveryResult> {
+    await recordDiscoveryEvidenceEvent(context.evidenceRecorder, {
+      name: 'discovery.completed',
+      step: state.step,
+      outputNames: Object.keys(outputs),
+    });
     await recordDiscoveryTrace(context.evidenceRecorder, {
       kind: 'runtime_event',
       step: state.step,
       status: 'success',
-
       summary: 'Discovery goal completed with verified outputs',
     });
-
     const summary = await this.dependencies.coordinator.finish({
       status: 'success',
       result: { outputs },
     });
-
     return withDiscoverySteps(
       parseRuntimeResult({
         runId: summary.runId,
@@ -1246,9 +1243,7 @@ export class DiscoveryEngine {
         finishedAt: summary.finishedAt,
         durationMs: summary.durationMs,
         evidenceRefs: summary.evidenceRefs,
-
         sessionId: context.sessionManager.sessionId,
-
         recoverableConditions: [],
         status: 'success',
         outputs,
@@ -1265,20 +1260,22 @@ export class DiscoveryEngine {
     const outcome = {
       code: 'PERMISSION_DENIED' as const,
       message,
-
       details: {
         phase: 'discovery_loop',
         step: state.step,
       },
     };
-
+    await recordDiscoveryEvidenceEvent(context.evidenceRecorder, {
+      name: 'discovery.business_outcome',
+      step: state.step,
+      outcomeCode: outcome.code,
+    });
     await recordDiscoveryTrace(context.evidenceRecorder, {
       kind: 'runtime_event',
       step: state.step,
       status: 'business_outcome',
       summary: message,
     });
-
     const summary = await this.dependencies.coordinator.finish({
       status: 'business_outcome',
       result: { outcome },
@@ -1291,9 +1288,7 @@ export class DiscoveryEngine {
         finishedAt: summary.finishedAt,
         durationMs: summary.durationMs,
         evidenceRefs: summary.evidenceRefs,
-
         sessionId: context.sessionManager.sessionId,
-
         recoverableConditions: [],
         status: 'business_outcome',
         outcome,
@@ -1312,22 +1307,23 @@ export class DiscoveryEngine {
       eventType: 'intervention',
       result: intervention,
     });
-
+    const source = intervention.context.source;
+    await recordDiscoveryEvidenceEvent(context.evidenceRecorder, {
+      name: 'discovery.escalated',
+      step: state.step,
+      reasonCode: intervention.code,
+      source: typeof source === 'string' ? source : 'unknown',
+    });
     await recordDiscoveryTrace(context.evidenceRecorder, {
       kind: 'runtime_event',
       step: state.step,
-
       status: 'intervention_required',
-
       summary: intervention.message,
     });
-
     const summary = await this.dependencies.coordinator.finish({
       status: 'intervention_required',
-
       result: { intervention },
     });
-
     return withDiscoverySteps(
       parseRuntimeResult({
         runId: summary.runId,
@@ -1335,13 +1331,9 @@ export class DiscoveryEngine {
         finishedAt: summary.finishedAt,
         durationMs: summary.durationMs,
         evidenceRefs: summary.evidenceRefs,
-
         sessionId: context.sessionManager.sessionId,
-
         recoverableConditions: [],
-
         status: 'intervention_required',
-
         intervention,
       }),
       state.step,
@@ -1355,24 +1347,21 @@ export class DiscoveryEngine {
   ): Promise<DiscoveryResult> {
     const error = {
       ...failure,
-
       stepId: state.step === 0 ? null : String(state.step),
-
-      details: {
-        phase: 'discovery_loop',
-        step: state.step,
-      },
+      details: { phase: 'discovery_loop', step: state.step },
     };
-
+    await recordDiscoveryEvidenceEvent(context.evidenceRecorder, {
+      name: 'discovery.failed',
+      step: state.step,
+      errorCode: failure.code,
+    });
     await recordDiscoveryTrace(context.evidenceRecorder, {
       kind: 'runtime_event',
       step: state.step,
       status: 'failure',
       summary: failure.message,
     });
-
     const summary = await this.dependencies.coordinator.fail(error);
-
     return withDiscoverySteps(
       parseRuntimeResult({
         runId: summary.runId,
@@ -1380,9 +1369,7 @@ export class DiscoveryEngine {
         finishedAt: summary.finishedAt,
         durationMs: summary.durationMs,
         evidenceRefs: summary.evidenceRefs,
-
         sessionId: context.sessionManager.sessionId,
-
         recoverableConditions: [],
         status: 'failure',
         error,

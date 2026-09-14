@@ -50,18 +50,21 @@ describe('discovery model decision validation', () => {
     expect(model.calls).toBe(1);
   });
 
-  it('retries one invalid response and accepts the correction', async () => {
-    const model = new SequenceModel([
-      {
-        kind: 'unsupported',
-      },
-      escalation,
-    ]);
+  it('retries one invalid structured response and accepts the correction', async () => {
+    const model = new SequenceModel([{ kind: 'unsupported' }, escalation]);
+
+    const invalidAttempts: Array<{
+      attempt: number;
+      issues: readonly string[];
+    }> = [];
 
     await expect(
       requestValidatedDiscoveryDecision({
         model,
         modelInput,
+        onInvalid: (invalid) => {
+          invalidAttempts.push(invalid);
+        },
       }),
     ).resolves.toEqual({
       decision: escalation,
@@ -69,6 +72,14 @@ describe('discovery model decision validation', () => {
     });
 
     expect(model.calls).toBe(2);
+
+    expect(invalidAttempts).toMatchObject([
+      {
+        attempt: 1,
+      },
+    ]);
+
+    expect(invalidAttempts[0]?.issues.length).toBeGreaterThan(0);
   });
 
   it('fails clearly after the format retry is exhausted', async () => {
