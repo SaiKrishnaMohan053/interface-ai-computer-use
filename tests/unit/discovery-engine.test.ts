@@ -388,26 +388,57 @@ describe('DiscoveryEngine', () => {
     const fixture = engine([
       {
         kind: 'read',
+
         target: readTarget,
+
         source: 'text',
+
         saveAs: 'savingsBalance',
+
         reason: 'Read the visible balance',
       },
       {
         kind: 'complete',
+
         summary: 'Read the Savings balance',
-        outputs: { savingsBalance: '$12,840.50' },
+
+        outputs: {
+          savingsBalance: '$12,840.50',
+        },
       },
     ]);
 
     await expect(fixture.discovery.run(request())).resolves.toMatchObject({
       status: 'success',
       steps: 2,
-      outputs: { savingsBalance: '$12,840.50' },
+
+      outputs: {
+        savingsBalance: '$12,840.50',
+      },
     });
 
     expect(fixture.surface.performed.map((entry) => entry.action.kind)).toEqual(['read']);
+
     expect(fixture.coordinator.finishedStatuses).toEqual(['success']);
+
+    const traceKinds = fixture.coordinator.events
+      .filter((event) => event.eventType === 'discovery_trace')
+      .map((event) =>
+        typeof event.result === 'object' && event.result !== null && 'kind' in event.result
+          ? event.result.kind
+          : null,
+      );
+
+    expect(traceKinds).toEqual(
+      expect.arrayContaining([
+        'observation',
+        'model_decision',
+        'policy_decision',
+        'target_resolution',
+        'action_result',
+        'runtime_event',
+      ]),
+    );
   });
 
   it('retries one invalid model decision and then returns a typed validation failure', async () => {

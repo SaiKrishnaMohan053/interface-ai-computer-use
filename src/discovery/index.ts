@@ -162,6 +162,15 @@ export type {
 } from './discovery-result.js';
 
 export {
+  discoveryDecisionRationale,
+  discoveryTraceRecordSchema,
+  parseDiscoveryTraceRecord,
+  recordDiscoveryTrace,
+} from './discovery-trace.js';
+
+export type { DiscoveryTraceRecord, DiscoveryTraceSink } from './discovery-trace.js';
+
+export {
   DEFAULT_DISCOVERY_CONDITION_POLL_INTERVAL_MS,
   DEFAULT_DISCOVERY_MAX_REPEATED_STATES,
   DEFAULT_DISCOVERY_OPERATION_TIMEOUT_MS,
