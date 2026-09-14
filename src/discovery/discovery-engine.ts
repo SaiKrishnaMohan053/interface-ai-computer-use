@@ -53,6 +53,7 @@ import {
   evaluateDiscoveryLoopBudget,
   isHardDiscoveryActionFailure,
 } from './stopping-conditions.js';
+import { withDiscoverySteps } from './discovery-result.js';
 
 export const DEFAULT_DISCOVERY_MAX_STEPS = 25;
 export const DEFAULT_DISCOVERY_MAX_REPEATED_STATES = 3;
@@ -526,7 +527,7 @@ export class DiscoveryEngine {
               outcome: 'completed',
               result: verification.outputs,
             });
-            return this.finishSuccess(context, verification.outputs);
+            return this.finishSuccess(context, state, verification.outputs);
           }
 
           memory.recentAction = null;
@@ -592,24 +593,30 @@ export class DiscoveryEngine {
         code: 'APPLICATION_ERROR',
         phase: 'discovery_loop',
       });
-      return parseRuntimeResult({
-        runId: summary.runId,
-        startedAt: summary.startedAt,
-        finishedAt: summary.finishedAt,
-        durationMs: summary.durationMs,
-        evidenceRefs: summary.evidenceRefs,
-        sessionId: context.sessionManager.sessionId,
-        recoverableConditions: [],
-        status: 'failure',
-        error: {
-          code: 'APPLICATION_ERROR',
-          message: 'Discovery engine failed unexpectedly',
-          stepId: state.step === 0 ? null : String(state.step),
-          expected: 'a valid bounded discovery transition',
-          observed: 'unexpected internal failure',
-          details: { phase: 'discovery_loop' },
-        },
-      });
+
+      return withDiscoverySteps(
+        parseRuntimeResult({
+          runId: summary.runId,
+          startedAt: summary.startedAt,
+          finishedAt: summary.finishedAt,
+          durationMs: summary.durationMs,
+          evidenceRefs: summary.evidenceRefs,
+          sessionId: context.sessionManager.sessionId,
+          recoverableConditions: [],
+          status: 'failure',
+          error: {
+            code: 'APPLICATION_ERROR',
+            message: 'Discovery engine failed unexpectedly',
+            stepId: state.step === 0 ? null : String(state.step),
+            expected: 'a valid bounded discovery transition',
+            observed: 'unexpected internal failure',
+            details: {
+              phase: 'discovery_loop',
+            },
+          },
+        }),
+        state.step,
+      );
     }
   }
 
@@ -978,23 +985,28 @@ export class DiscoveryEngine {
 
   private async finishSuccess(
     context: DiscoveryContext,
+    state: DiscoveryRunState,
     outputs: Readonly<Record<string, JsonValue>>,
   ): Promise<DiscoveryResult> {
     const summary = await this.dependencies.coordinator.finish({
       status: 'success',
       result: { outputs },
     });
-    return parseRuntimeResult({
-      runId: summary.runId,
-      startedAt: summary.startedAt,
-      finishedAt: summary.finishedAt,
-      durationMs: summary.durationMs,
-      evidenceRefs: summary.evidenceRefs,
-      sessionId: context.sessionManager.sessionId,
-      recoverableConditions: [],
-      status: 'success',
-      outputs,
-    });
+
+    return withDiscoverySteps(
+      parseRuntimeResult({
+        runId: summary.runId,
+        startedAt: summary.startedAt,
+        finishedAt: summary.finishedAt,
+        durationMs: summary.durationMs,
+        evidenceRefs: summary.evidenceRefs,
+        sessionId: context.sessionManager.sessionId,
+        recoverableConditions: [],
+        status: 'success',
+        outputs,
+      }),
+      state.step,
+    );
   }
 
   private async finishBusinessOutcome(
@@ -1016,17 +1028,20 @@ export class DiscoveryEngine {
       result: { outcome },
     });
 
-    return parseRuntimeResult({
-      runId: summary.runId,
-      startedAt: summary.startedAt,
-      finishedAt: summary.finishedAt,
-      durationMs: summary.durationMs,
-      evidenceRefs: summary.evidenceRefs,
-      sessionId: context.sessionManager.sessionId,
-      recoverableConditions: [],
-      status: 'business_outcome',
-      outcome,
-    });
+    return withDiscoverySteps(
+      parseRuntimeResult({
+        runId: summary.runId,
+        startedAt: summary.startedAt,
+        finishedAt: summary.finishedAt,
+        durationMs: summary.durationMs,
+        evidenceRefs: summary.evidenceRefs,
+        sessionId: context.sessionManager.sessionId,
+        recoverableConditions: [],
+        status: 'business_outcome',
+        outcome,
+      }),
+      state.step,
+    );
   }
 
   private async escalate(
@@ -1039,21 +1054,26 @@ export class DiscoveryEngine {
       eventType: 'intervention',
       result: intervention,
     });
+
     const summary = await this.dependencies.coordinator.finish({
       status: 'intervention_required',
       result: { intervention },
     });
-    return parseRuntimeResult({
-      runId: summary.runId,
-      startedAt: summary.startedAt,
-      finishedAt: summary.finishedAt,
-      durationMs: summary.durationMs,
-      evidenceRefs: summary.evidenceRefs,
-      sessionId: context.sessionManager.sessionId,
-      recoverableConditions: [],
-      status: 'intervention_required',
-      intervention,
-    });
+
+    return withDiscoverySteps(
+      parseRuntimeResult({
+        runId: summary.runId,
+        startedAt: summary.startedAt,
+        finishedAt: summary.finishedAt,
+        durationMs: summary.durationMs,
+        evidenceRefs: summary.evidenceRefs,
+        sessionId: context.sessionManager.sessionId,
+        recoverableConditions: [],
+        status: 'intervention_required',
+        intervention,
+      }),
+      state.step,
+    );
   }
 
   private async finishFailure(
@@ -1064,19 +1084,27 @@ export class DiscoveryEngine {
     const error = {
       ...failure,
       stepId: state.step === 0 ? null : String(state.step),
-      details: { phase: 'discovery_loop', step: state.step },
+      details: {
+        phase: 'discovery_loop',
+        step: state.step,
+      },
     };
+
     const summary = await this.dependencies.coordinator.fail(error);
-    return parseRuntimeResult({
-      runId: summary.runId,
-      startedAt: summary.startedAt,
-      finishedAt: summary.finishedAt,
-      durationMs: summary.durationMs,
-      evidenceRefs: summary.evidenceRefs,
-      sessionId: context.sessionManager.sessionId,
-      recoverableConditions: [],
-      status: 'failure',
-      error,
-    });
+
+    return withDiscoverySteps(
+      parseRuntimeResult({
+        runId: summary.runId,
+        startedAt: summary.startedAt,
+        finishedAt: summary.finishedAt,
+        durationMs: summary.durationMs,
+        evidenceRefs: summary.evidenceRefs,
+        sessionId: context.sessionManager.sessionId,
+        recoverableConditions: [],
+        status: 'failure',
+        error,
+      }),
+      state.step,
+    );
   }
 }

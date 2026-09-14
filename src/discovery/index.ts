@@ -144,6 +144,24 @@ export { classifyDiscoveryDecisionRisk } from './discovery-risk-classifier.js';
 export type { DiscoveryRiskClassification } from './discovery-risk-classifier.js';
 
 export {
+  discoveryBusinessOutcomeResultSchema,
+  discoveryFailureResultSchema,
+  discoveryInterventionRequiredResultSchema,
+  discoveryRunResultSchema,
+  discoverySuccessResultSchema,
+  parseDiscoveryRunResult,
+  withDiscoverySteps,
+} from './discovery-result.js';
+
+export type {
+  DiscoveryBusinessOutcomeResult,
+  DiscoveryFailureResult,
+  DiscoveryInterventionRequiredResult,
+  DiscoveryRunResult,
+  DiscoverySuccessResult,
+} from './discovery-result.js';
+
+export {
   DEFAULT_DISCOVERY_CONDITION_POLL_INTERVAL_MS,
   DEFAULT_DISCOVERY_MAX_REPEATED_STATES,
   DEFAULT_DISCOVERY_OPERATION_TIMEOUT_MS,

@@ -402,6 +402,7 @@ describe('DiscoveryEngine', () => {
 
     await expect(fixture.discovery.run(request())).resolves.toMatchObject({
       status: 'success',
+      steps: 2,
       outputs: { savingsBalance: '$12,840.50' },
     });
 

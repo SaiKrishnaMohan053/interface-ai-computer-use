@@ -1,10 +1,10 @@
-import type { RuntimeResult } from '../runtime/index.js';
-
 import type { JsonValue, Timestamp } from '../surface/index.js';
 
 import type { DiscoveryRequest, DiscoveryRunConfig } from './contracts.js';
 
 import type { DiscoveryDecision } from './decision.js';
+
+import type { DiscoveryRunResult } from './discovery-result.js';
 
 export type DiscoveryStepOutcome =
   | 'decision_recorded'
@@ -130,7 +130,7 @@ export function appendDiscoveryStep(
 }
 
 /**
- * Discovery reuses the Phase 1 runtime result contract.
- * It does not introduce a competing result taxonomy.
+ * Discovery extends the Phase 1 runtime result with
+ * bounded progress metadata.
  */
-export type DiscoveryResult = RuntimeResult;
+export type DiscoveryResult = DiscoveryRunResult;
