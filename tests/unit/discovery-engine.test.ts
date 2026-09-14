@@ -498,12 +498,14 @@ describe('DiscoveryEngine', () => {
         runId: 'discovery-lookup-savings-balance',
         evidenceRoot: 'evidence',
         screenshotEvidence: 'synthetic_fixture',
+        headed: true,
       }),
     ).resolves.toMatchObject({ status: 'success' });
 
     expect(fixture.coordinator.startOptions).toMatchObject({
       runId: 'discovery-lookup-savings-balance',
       evidenceRoot: 'evidence',
+      headed: true,
     });
     expect(fixture.surface.evidenceRequests).toEqual([
       { kind: 'screenshot', extent: 'viewport' },

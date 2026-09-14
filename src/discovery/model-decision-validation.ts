@@ -73,11 +73,12 @@ export async function requestValidatedDiscoveryDecision(input: {
   }
 
   let lastError: ZodError | DiscoveryModelResponseError | null = null;
+  let modelInput = input.modelInput;
 
   for (let attempt = 1; attempt <= maxFormatRetries + 1; attempt += 1) {
     await input.onRequest?.(attempt);
     try {
-      const rawDecision: unknown = await input.model.decide(input.modelInput);
+      const rawDecision: unknown = await input.model.decide(modelInput);
 
       return {
         decision: parseDiscoveryDecision(rawDecision),
@@ -89,10 +90,17 @@ export async function requestValidatedDiscoveryDecision(input: {
       }
 
       lastError = error;
+      const issues = validationIssues(error);
+
       await input.onInvalid?.({
         attempt,
-        issues: validationIssues(error),
+        issues,
       });
+
+      modelInput = {
+        ...input.modelInput,
+        validationFeedback: issues,
+      };
     }
   }
 

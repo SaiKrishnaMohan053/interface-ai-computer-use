@@ -169,21 +169,17 @@ describe('DiscoveryDecisionModel abstraction', () => {
 });
 
 describe('OpenAIDiscoveryDecisionModel', () => {
-  it('returns a domain decision without leaking SDK structures', async () => {
+  it('returns a direct domain decision without leaking SDK structures', async () => {
     let received: OpenAIDecisionTransportRequest | undefined;
 
     const transport: OpenAIDecisionTransport = (request) => {
       received = request;
 
       return Promise.resolve({
-        decision: {
-          kind: 'complete',
-          argumentsJson: JSON.stringify({
-            summary: "Located Alex Morgan's Savings account and read the balance.",
-            outputs: {
-              savingsBalance: '$12,840.50',
-            },
-          }),
+        kind: 'complete',
+        summary: "Located Alex Morgan's Savings account and read the balance.",
+        outputs: {
+          savingsBalance: '$12,840.50',
         },
       });
     };
@@ -202,35 +198,16 @@ describe('OpenAIDiscoveryDecisionModel', () => {
       },
     });
 
-    expect(received?.model).toBe('gpt-4.1-mini');
+    expect(received?.model).toBe(config.model);
     expect(received?.modelInputJson).toContain('$12,840.50');
-    const transmittedInput = JSON.parse(received?.modelInputJson ?? '{}') as Record<
-      string,
-      unknown
-    >;
-
-    expect(transmittedInput).toHaveProperty('goal', "Read Alex Morgan's Savings balance");
-
-    expect(transmittedInput).toHaveProperty('step', 4);
-    expect(transmittedInput).toHaveProperty('currentObservation');
-    expect(transmittedInput).toHaveProperty('recent');
-    expect(transmittedInput).toHaveProperty('history');
     expect(received?.systemPrompt).toContain('Do not invent controls');
-    expect(received?.decisionContract).toContain('"complete"');
-
-    expect(received?.decisionContract).toContain('"escalate"');
+    expect(received?.decisionContract).toContain('complete');
 
     expect(JSON.stringify(received)).not.toContain(config.apiKey);
   });
 
-  it('rejects malformed decision arguments', async () => {
-    const transport: OpenAIDecisionTransport = () =>
-      Promise.resolve({
-        decision: {
-          kind: 'complete',
-          argumentsJson: '{not-json',
-        },
-      });
+  it('rejects a non-object transport response', async () => {
+    const transport: OpenAIDecisionTransport = () => Promise.resolve('{not-a-domain-decision');
 
     const model = new OpenAIDiscoveryDecisionModel(config, transport);
 
@@ -241,37 +218,13 @@ describe('OpenAIDiscoveryDecisionModel', () => {
     ).rejects.toBeInstanceOf(DiscoveryModelResponseError);
   });
 
-  it('rejects arguments that redefine the decision kind', async () => {
+  it('rejects a nested provider-specific response wrapper', async () => {
     const transport: OpenAIDecisionTransport = () =>
       Promise.resolve({
         decision: {
           kind: 'complete',
-          argumentsJson: JSON.stringify({
-            kind: 'escalate',
-            summary: 'Unsupported',
-            outputs: {},
-          }),
-        },
-      });
-
-    const model = new OpenAIDiscoveryDecisionModel(config, transport);
-
-    await expect(
-      model.decide({
-        observation,
-      }),
-    ).rejects.toThrow('must not redefine kind');
-  });
-
-  it('rejects domain-invalid structured decisions', async () => {
-    const transport: OpenAIDecisionTransport = () =>
-      Promise.resolve({
-        decision: {
-          kind: 'complete',
-          argumentsJson: JSON.stringify({
-            summary: '',
-            outputs: {},
-          }),
+          summary: 'Unsupported wrapper',
+          outputs: {},
         },
       });
 
@@ -284,7 +237,24 @@ describe('OpenAIDiscoveryDecisionModel', () => {
     ).rejects.toThrow('did not satisfy the DiscoveryDecision contract');
   });
 
-  it('rejects missing or invalid structured output', async () => {
+  it('rejects domain-invalid structured decisions', async () => {
+    const transport: OpenAIDecisionTransport = () =>
+      Promise.resolve({
+        kind: 'complete',
+        summary: '',
+        outputs: {},
+      });
+
+    const model = new OpenAIDiscoveryDecisionModel(config, transport);
+
+    await expect(
+      model.decide({
+        observation,
+      }),
+    ).rejects.toThrow('did not satisfy the DiscoveryDecision contract');
+  });
+
+  it('rejects missing structured output', async () => {
     const transport: OpenAIDecisionTransport = () => Promise.resolve(null);
 
     const model = new OpenAIDiscoveryDecisionModel(config, transport);
@@ -293,6 +263,6 @@ describe('OpenAIDiscoveryDecisionModel', () => {
       model.decide({
         observation,
       }),
-    ).rejects.toThrow('no valid structured discovery decision');
+    ).rejects.toBeInstanceOf(DiscoveryModelResponseError);
   });
 });

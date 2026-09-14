@@ -17,6 +17,8 @@ import { sanitizeModelContextValue } from '../observation-projector.js';
 
 export const DISCOVERY_MODEL_HISTORY_LIMIT = 5;
 export const DISCOVERY_HISTORY_SUMMARY_LIMIT = 1_000;
+export const DISCOVERY_VALIDATION_FEEDBACK_LIMIT = 10;
+export const DISCOVERY_VALIDATION_ISSUE_LIMIT = 500;
 
 export const discoveryHistoryEntrySchema = z
   .object({
@@ -55,6 +57,10 @@ export const discoveryModelContextSchema = z
       .strict(),
 
     history: z.array(discoveryHistoryEntrySchema).max(DISCOVERY_MODEL_HISTORY_LIMIT),
+
+    validationFeedback: z
+      .array(z.string().trim().min(1).max(DISCOVERY_VALIDATION_ISSUE_LIMIT))
+      .max(DISCOVERY_VALIDATION_FEEDBACK_LIMIT),
   })
   .strict();
 
@@ -64,6 +70,8 @@ export type DiscoveryModelContext = z.infer<typeof discoveryModelContextSchema>;
 
 export interface DiscoveryModelInput {
   readonly observation: AgentObservation;
+  /** Bounded feedback supplied only after an invalid model-format attempt. */
+  readonly validationFeedback?: readonly string[];
 
   /**
    * Optional for the first discovery step. When supplied, only the latest
@@ -97,9 +105,17 @@ function buildBoundedHistory(history: readonly DiscoveryHistoryEntry[]): Discove
   );
 }
 
+function buildValidationFeedback(issues: readonly string[]): string[] {
+  return issues
+    .slice(0, DISCOVERY_VALIDATION_FEEDBACK_LIMIT)
+    .map((issue) => issue.trim().slice(0, DISCOVERY_VALIDATION_ISSUE_LIMIT))
+    .filter((issue) => issue.length > 0);
+}
+
 export function createDiscoveryModelInput(input: {
   readonly observation: AgentObservation;
   readonly history?: readonly DiscoveryHistoryEntry[];
+  readonly validationFeedback?: readonly string[];
 }): DiscoveryModelInput {
   const observation = agentObservationSchema.parse(input.observation);
 
@@ -108,6 +124,7 @@ export function createDiscoveryModelInput(input: {
   return {
     observation,
     history,
+    validationFeedback: buildValidationFeedback(input.validationFeedback ?? []),
   };
 }
 
@@ -129,5 +146,6 @@ export function buildDiscoveryModelContext(input: DiscoveryModelInput): Discover
     },
 
     history: normalizedInput.history ?? [],
+    validationFeedback: normalizedInput.validationFeedback ?? [],
   });
 }

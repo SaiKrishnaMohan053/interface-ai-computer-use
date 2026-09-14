@@ -228,8 +228,19 @@ describe('Discovery policy gate', () => {
       decision: {
         kind: 'click',
         target: {
-          ...target,
           description: 'Submit application',
+          strategies: [
+            {
+              kind: 'role-name',
+              role: 'button',
+              name: {
+                value: 'Submit application',
+                mode: 'exact',
+                caseSensitive: false,
+              },
+            },
+          ],
+          cardinality: 'exactly-one',
         },
         reason: 'The model claims this is safe',
       },

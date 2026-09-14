@@ -1,46 +1,53 @@
 import type { ObservableControl, ObservableDialog } from '../contracts.js';
 
 export function collect(options: { maxTextLength: number; maxControls: number }) {
-  const visible = (el: Element): el is HTMLElement =>
-    el instanceof HTMLElement &&
-    el.checkVisibility({
-      checkOpacity: true,
-      checkVisibilityCSS: true,
-    });
+  const helpers = {
+    visible(el: Element): el is HTMLElement {
+      return (
+        el instanceof HTMLElement &&
+        el.checkVisibility({
+          checkOpacity: true,
+          checkVisibilityCSS: true,
+        })
+      );
+    },
 
-  const name = (el: HTMLElement): string => {
-    const ids = el.getAttribute('aria-labelledby');
+    accessibleName(el: HTMLElement): string {
+      const ids = el.getAttribute('aria-labelledby');
 
-    if (ids) {
-      return ids
-        .split(/\s+/)
-        .map((id) => document.getElementById(id)?.innerText ?? '')
-        .join(' ')
-        .trim();
-    }
-
-    const aria = el.getAttribute('aria-label');
-
-    if (aria !== null) {
-      return aria;
-    }
-
-    if (
-      el instanceof HTMLInputElement ||
-      el instanceof HTMLSelectElement ||
-      el instanceof HTMLTextAreaElement
-    ) {
-      const label = [...(el.labels ?? [])]
-        .map((item) => item.innerText)
-        .join(' ')
-        .trim();
-
-      if (label) {
-        return label;
+      if (ids) {
+        return ids
+          .split(/\s+/)
+          .map((id) => document.getElementById(id)?.innerText ?? '')
+          .join(' ')
+          .trim();
       }
-    }
 
-    return el.innerText?.trim() || el.getAttribute('placeholder') || el.getAttribute('title') || '';
+      const aria = el.getAttribute('aria-label');
+
+      if (aria !== null) {
+        return aria;
+      }
+
+      if (
+        el instanceof HTMLInputElement ||
+        el instanceof HTMLSelectElement ||
+        el instanceof HTMLTextAreaElement
+      ) {
+        const label = [...(el.labels ?? [])]
+          .map((item) => item.innerText)
+          .join(' ')
+          .trim();
+
+        if (label) {
+          return label;
+        }
+      }
+
+      return (
+        el.innerText?.trim() || el.getAttribute('placeholder') || el.getAttribute('title') || ''
+      );
+    },
   };
 
   const all = [
@@ -48,7 +55,7 @@ export function collect(options: { maxTextLength: number; maxControls: number })
       'button,a[href],input,textarea,select,[role],[contenteditable="true"]',
     ),
   ]
-    .filter(visible)
+    .filter((el) => helpers.visible(el))
     .filter(
       (el) =>
         !['dialog', 'alert', 'status', 'presentation', 'navigation'].includes(
@@ -63,7 +70,7 @@ export function collect(options: { maxTextLength: number; maxControls: number })
 
     const base = {
       controlId: String(index),
-      name: name(el),
+      name: helpers.accessibleName(el),
       role: el.getAttribute('role'),
       visible: true,
       enabled: !el.matches(':disabled') && el.getAttribute('aria-disabled') !== 'true',
@@ -160,12 +167,12 @@ export function collect(options: { maxTextLength: number; maxControls: number })
   const dialogs: ObservableDialog[] = [
     ...document.querySelectorAll('dialog,[role="dialog"],[role="alertdialog"]'),
   ]
-    .filter(visible)
+    .filter((el) => helpers.visible(el))
     .map((el, index) => ({
       kind: 'surface',
       dialogId: `surface-${index}`,
       presentation: el.matches(':modal,[aria-modal="true"]') ? 'modal' : 'interstitial',
-      title: name(el) || null,
+      title: helpers.accessibleName(el) || null,
       text: el.innerText.slice(0, options.maxTextLength),
       controlIds: elements.flatMap((control, controlIndex) =>
         el.contains(control) ? [String(controlIndex)] : [],
@@ -181,7 +188,7 @@ export function collect(options: { maxTextLength: number; maxControls: number })
   while ((node = walker.nextNode())) {
     const el = node.parentElement;
 
-    if (!el || el.closest('script,style,noscript') || !visible(el)) {
+    if (!el || el.closest('script,style,noscript') || !helpers.visible(el)) {
       continue;
     }
 
@@ -199,9 +206,13 @@ export function collect(options: { maxTextLength: number; maxControls: number })
 
   const text = parts.join('\n');
 
-  const busy = [...document.querySelectorAll('[aria-busy="true"]')].some(visible);
+  const busy = [...document.querySelectorAll('[aria-busy="true"]')].some((el) =>
+    helpers.visible(el),
+  );
 
-  const ready = [...document.querySelectorAll('[data-surface-ready="true"]')].some(visible);
+  const ready = [...document.querySelectorAll('[data-surface-ready="true"]')].some((el) =>
+    helpers.visible(el),
+  );
 
   return {
     visibleText: text.slice(0, options.maxTextLength),

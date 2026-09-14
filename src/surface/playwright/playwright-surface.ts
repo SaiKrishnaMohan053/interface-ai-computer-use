@@ -35,6 +35,8 @@ import type { PlaywrightStrategy } from './resolve-strategy.js';
 
 export type { PlaywrightStrategy } from './resolve-strategy.js';
 
+import { isUninitializedPlaywrightDocument } from './initial-document.js';
+
 class Fault extends Error {
   constructor(
     readonly code: SurfaceFailure['code'],
@@ -225,17 +227,29 @@ export class PlaywrightSurface implements SurfaceAdapter<PlaywrightStrategy> {
 
         const observationId = randomUUID();
         const revision = this.revision;
+        const currentUrl = this.page.url();
 
-        // Native dialogs block renderer calls.
-        const data = this.pending.size
+        const uninitializedDocument =
+          this.pending.size === 0 &&
+          currentUrl === 'about:blank' &&
+          isUninitializedPlaywrightDocument(currentUrl, await this.page.content());
+
+        const rendererUnavailable = this.pending.size > 0 || uninitializedDocument;
+
+        /*
+         * Native dialogs block renderer calls.
+         * A new about:blank page also has no application
+         * document worth projecting before entry navigation.
+         */
+        const data = rendererUnavailable
           ? {
               visibleText: '',
               controls: [],
               dialogs: [],
               loading: 'unknown' as const,
               truncated: {
-                visibleText: true,
-                controls: true,
+                visibleText: this.pending.size > 0,
+                controls: this.pending.size > 0,
               },
             }
           : await this.page.evaluate(collect, {
@@ -243,7 +257,7 @@ export class PlaywrightSurface implements SurfaceAdapter<PlaywrightStrategy> {
               maxControls: options.maxControls,
             });
 
-        const title = this.pending.size ? '' : await this.page.title();
+        const title = rendererUnavailable ? '' : await this.page.title();
 
         if (revision !== this.revision) {
           throw new Fault('STALE_TARGET', 'Page changed during observation');

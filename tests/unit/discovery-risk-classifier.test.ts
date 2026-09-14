@@ -107,4 +107,58 @@ describe('Discovery decision risk classification', () => {
       }),
     ).toMatchObject({ riskLevel: 'IRREVERSIBLE', source: 'system' });
   });
+
+  it('does not treat a model-written search description as irreversible', () => {
+    expect(
+      classifyDiscoveryDecisionRisk({
+        kind: 'click',
+        target: {
+          description: 'Submit the member search form',
+          strategies: [
+            {
+              kind: 'role-name',
+              role: 'button',
+              name: {
+                value: 'Search',
+                mode: 'exact',
+                caseSensitive: false,
+              },
+            },
+          ],
+          cardinality: 'exactly-one',
+        },
+        reason: 'Continue the lookup',
+      }),
+    ).toMatchObject({
+      riskLevel: 'READ_ONLY',
+      source: 'system',
+    });
+  });
+
+  it('uses semantic strategy fields when description understates risk', () => {
+    expect(
+      classifyDiscoveryDecisionRisk({
+        kind: 'click',
+        target: {
+          description: 'Continue to the next page',
+          strategies: [
+            {
+              kind: 'role-name',
+              role: 'button',
+              name: {
+                value: 'Submit application',
+                mode: 'exact',
+                caseSensitive: false,
+              },
+            },
+          ],
+          cardinality: 'exactly-one',
+        },
+        reason: 'The model claims this is harmless',
+      }),
+    ).toMatchObject({
+      riskLevel: 'IRREVERSIBLE',
+      source: 'system',
+    });
+  });
 });

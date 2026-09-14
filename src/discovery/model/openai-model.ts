@@ -1,12 +1,7 @@
 import OpenAI from 'openai';
-import { zodTextFormat } from 'openai/helpers/zod';
 import { z } from 'zod';
 
-import {
-  DISCOVERY_DECISION_KINDS,
-  discoveryDecisionSchema,
-  parseDiscoveryDecision,
-} from '../decision.js';
+import { discoveryDecisionSchema, parseDiscoveryDecision } from '../decision.js';
 
 import type { DiscoveryDecision } from '../decision.js';
 
@@ -23,24 +18,6 @@ import type { OpenAIDiscoveryModelConfig } from './model-config.js';
 
 import { DISCOVERY_SYSTEM_PROMPT } from './discovery-system-prompt.js';
 
-const openAIWireDecisionSchema = z
-  .object({
-    kind: z.enum(DISCOVERY_DECISION_KINDS).describe('The single DiscoveryDecision kind to perform'),
-
-    argumentsJson: z
-      .string()
-      .describe('A JSON object containing all fields for the selected decision except kind'),
-  })
-  .strict();
-
-const openAIWireResponseSchema = z
-  .object({
-    decision: openAIWireDecisionSchema,
-  })
-  .strict();
-
-type OpenAIWireResponse = z.infer<typeof openAIWireResponseSchema>;
-
 export interface OpenAIDecisionTransportRequest {
   readonly model: string;
   readonly systemPrompt: string;
@@ -49,9 +26,9 @@ export interface OpenAIDecisionTransportRequest {
 }
 
 /**
- * Narrow injection seam for unit tests.
+ * Narrow injection seam for deterministic tests.
  *
- * API keys and OpenAI SDK response types are deliberately absent.
+ * Credentials and OpenAI SDK response types are deliberately excluded.
  */
 export type OpenAIDecisionTransport = (request: OpenAIDecisionTransportRequest) => Promise<unknown>;
 
@@ -64,6 +41,22 @@ export class DiscoveryModelResponseError extends Error {
 
 const decisionJsonSchema = JSON.stringify(z.toJSONSchema(discoveryDecisionSchema), null, 2);
 
+function parseJsonObject(text: string): unknown {
+  const candidate = text.trim();
+
+  if (candidate.length === 0) {
+    throw new DiscoveryModelResponseError('OpenAI returned no structured discovery decision');
+  }
+
+  try {
+    return JSON.parse(candidate);
+  } catch (error) {
+    throw new DiscoveryModelResponseError('OpenAI returned an invalid JSON discovery decision', {
+      cause: error,
+    });
+  }
+}
+
 function createDefaultTransport(config: OpenAIDiscoveryModelConfig): OpenAIDecisionTransport {
   const client = new OpenAI({
     apiKey: config.apiKey,
@@ -72,7 +65,7 @@ function createDefaultTransport(config: OpenAIDiscoveryModelConfig): OpenAIDecis
   });
 
   return async (request: OpenAIDecisionTransportRequest): Promise<unknown> => {
-    const response = await client.responses.parse({
+    const response = await client.responses.create({
       model: request.model,
       max_output_tokens: config.maxOutputTokens,
 
@@ -84,7 +77,8 @@ function createDefaultTransport(config: OpenAIDiscoveryModelConfig): OpenAIDecis
         {
           role: 'user',
           content: [
-            'The selected decision must satisfy this DiscoveryDecision JSON Schema:',
+            'Return exactly one JSON object that directly satisfies this DiscoveryDecision JSON Schema.',
+            'Do not wrap the decision in another object or encode it as a JSON string.',
             request.decisionContract,
             'Current structured observation:',
             request.modelInputJson,
@@ -93,54 +87,14 @@ function createDefaultTransport(config: OpenAIDiscoveryModelConfig): OpenAIDecis
       ],
 
       text: {
-        format: zodTextFormat(openAIWireResponseSchema, 'discovery_decision'),
+        format: {
+          type: 'json_object',
+        },
       },
     });
 
-    return response.output_parsed;
+    return parseJsonObject(response.output_text);
   };
-}
-
-function parseArgumentsJson(argumentsJson: string): Record<string, unknown> {
-  let parsed: unknown;
-
-  try {
-    parsed = JSON.parse(argumentsJson);
-  } catch (error) {
-    throw new DiscoveryModelResponseError('Model decision arguments were not valid JSON', {
-      cause: error,
-    });
-  }
-
-  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    throw new DiscoveryModelResponseError('Model decision arguments must be a JSON object');
-  }
-
-  const argumentsObject = parsed as Record<string, unknown>;
-
-  if ('kind' in argumentsObject) {
-    throw new DiscoveryModelResponseError('Model decision arguments must not redefine kind');
-  }
-
-  return argumentsObject;
-}
-
-function convertWireResponse(response: OpenAIWireResponse): DiscoveryDecision {
-  const argumentsObject = parseArgumentsJson(response.decision.argumentsJson);
-
-  try {
-    return parseDiscoveryDecision({
-      kind: response.decision.kind,
-      ...argumentsObject,
-    });
-  } catch (error) {
-    throw new DiscoveryModelResponseError(
-      'Model response did not satisfy the DiscoveryDecision contract',
-      {
-        cause: error,
-      },
-    );
-  }
 }
 
 export class OpenAIDiscoveryDecisionModel implements DiscoveryDecisionModel {
@@ -149,7 +103,6 @@ export class OpenAIDiscoveryDecisionModel implements DiscoveryDecisionModel {
 
   constructor(config: OpenAIDiscoveryModelConfig, transport?: OpenAIDecisionTransport) {
     this.config = validateOpenAIDiscoveryModelConfig(config);
-
     this.transport = transport ?? createDefaultTransport(this.config);
   }
 
@@ -163,18 +116,16 @@ export class OpenAIDiscoveryDecisionModel implements DiscoveryDecisionModel {
       modelInputJson: JSON.stringify(modelContext),
     });
 
-    const wireResponse = openAIWireResponseSchema.safeParse(rawResponse);
-
-    if (!wireResponse.success) {
+    try {
+      return parseDiscoveryDecision(rawResponse);
+    } catch (error) {
       throw new DiscoveryModelResponseError(
-        'OpenAI returned no valid structured discovery decision',
+        'Model response did not satisfy the DiscoveryDecision contract',
         {
-          cause: wireResponse.error,
+          cause: error,
         },
       );
     }
-
-    return convertWireResponse(wireResponse.data);
   }
 }
 

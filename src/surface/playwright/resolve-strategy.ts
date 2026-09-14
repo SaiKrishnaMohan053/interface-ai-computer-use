@@ -77,33 +77,36 @@ function locator(
   }
 }
 
-async function structuralHandles(
-  page: Page,
+type StructuralQuery = Extract<TargetStrategy, { kind: 'structural' }>['query'];
 
-  strategy: Extract<TargetStrategy, { kind: 'structural' }>,
-): Promise<ElementHandle<HTMLElement | SVGElement>[]> {
-  const arrayHandle = await page.evaluateHandle((query) => {
-    type Match = {
-      value: string;
-      mode: 'exact' | 'contains';
-      caseSensitive: boolean;
-    };
+/**
+ * Browser-context function.
+ * Keep this self-contained and serialization-safe.
+ */
+export function resolveStructuralQuery(query: StructuralQuery): Element[] {
+  type Match = {
+    value: string;
+    mode: 'exact' | 'contains';
+    caseSensitive: boolean;
+  };
 
-    const normalized = (value: string): string => value.replace(/\s+/g, ' ').trim();
+  const helpers = {
+    normalized(value: string): string {
+      return value.replace(/\s+/g, ' ').trim();
+    },
 
-    const matches = (value: string, match: Match): boolean => {
-      const actual = normalized(value);
-
-      const expected = normalized(match.value);
+    matches(value: string, match: Match): boolean {
+      const actual = helpers.normalized(value);
+      const expected = helpers.normalized(match.value);
 
       const left = match.caseSensitive ? actual : actual.toLowerCase();
 
       const right = match.caseSensitive ? expected : expected.toLowerCase();
 
       return match.mode === 'exact' ? left === right : left.includes(right);
-    };
+    },
 
-    const accessibleName = (element: Element): string => {
+    accessibleName(element: Element): string {
       const label = element.getAttribute('aria-label');
 
       if (label !== null) {
@@ -124,9 +127,9 @@ async function structuralHandles(
       }
 
       return element.textContent ?? '';
-    };
+    },
 
-    const implicitRole = (element: Element): string | null => {
+    implicitRole(element: Element): string | null {
       const explicit = element.getAttribute('role');
 
       if (explicit) {
@@ -190,89 +193,100 @@ async function structuralHandles(
       }
 
       return null;
-    };
+    },
 
-    const matchesDescriptor = (
+    matchesDescriptor(
       element: Element,
-
       descriptor: {
         role?: string | undefined;
         name?: Match | undefined;
         text?: Match | undefined;
       },
-    ): boolean =>
-      (descriptor.role === undefined || implicitRole(element) === descriptor.role) &&
-      (descriptor.name === undefined || matches(accessibleName(element), descriptor.name)) &&
-      (descriptor.text === undefined || matches(element.textContent ?? '', descriptor.text));
+    ): boolean {
+      return (
+        (descriptor.role === undefined || helpers.implicitRole(element) === descriptor.role) &&
+        (descriptor.name === undefined ||
+          helpers.matches(helpers.accessibleName(element), descriptor.name)) &&
+        (descriptor.text === undefined ||
+          helpers.matches(element.textContent ?? '', descriptor.text))
+      );
+    },
+  };
 
-    if (query.kind === 'table-cell') {
-      const results: Element[] = [];
-
-      for (const table of document.querySelectorAll('table')) {
-        if (!matches(accessibleName(table), query.table.name)) {
-          continue;
-        }
-
-        const rowHeaders = [...table.querySelectorAll('th')].filter((header) =>
-          matches(header.textContent ?? '', query.row.columnHeader),
-        );
-
-        const resultHeaders = [...table.querySelectorAll('th')].filter((header) =>
-          matches(header.textContent ?? '', query.column.header),
-        );
-
-        for (const rowHeader of rowHeaders) {
-          const rowColumnIndex = rowHeader.cellIndex;
-
-          for (const resultHeader of resultHeaders) {
-            const resultColumnIndex = resultHeader.cellIndex;
-
-            for (const row of table.querySelectorAll('tr')) {
-              const cells = [...row.querySelectorAll(':scope > th, :scope > td')];
-
-              const rowKeyCell = cells[rowColumnIndex];
-
-              if (!rowKeyCell || !matches(rowKeyCell.textContent ?? '', query.row.value)) {
-                continue;
-              }
-
-              const target = cells[resultColumnIndex];
-
-              if (target && target !== rowHeader && target !== resultHeader) {
-                results.push(target);
-              }
-            }
-          }
-        }
-      }
-
-      return [...new Set(results)];
-    }
-
+  if (query.kind === 'table-cell') {
     const results: Element[] = [];
 
-    const containers = [...document.querySelectorAll('body *')].filter((element) =>
-      matchesDescriptor(element, query.container),
-    );
+    for (const table of document.querySelectorAll('table')) {
+      if (!helpers.matches(helpers.accessibleName(table), query.table.name)) {
+        continue;
+      }
 
-    for (const container of containers) {
-      const targets = [...container.querySelectorAll('*')].filter((element) =>
-        matchesDescriptor(element, query.target),
+      const rowHeaders = [...table.querySelectorAll('th')].filter((header) =>
+        helpers.matches(header.textContent ?? '', query.row.columnHeader),
       );
 
-      if (query.target.zeroBasedIndex === undefined) {
-        results.push(...targets);
-      } else {
-        const selected = targets[query.target.zeroBasedIndex];
+      const resultHeaders = [...table.querySelectorAll('th')].filter((header) =>
+        helpers.matches(header.textContent ?? '', query.column.header),
+      );
 
-        if (selected) {
-          results.push(selected);
+      for (const rowHeader of rowHeaders) {
+        const rowColumnIndex = rowHeader.cellIndex;
+
+        for (const resultHeader of resultHeaders) {
+          const resultColumnIndex = resultHeader.cellIndex;
+
+          for (const row of table.querySelectorAll('tr')) {
+            const cells = [...row.querySelectorAll(':scope > th, :scope > td')];
+
+            const rowKeyCell = cells[rowColumnIndex];
+
+            if (!rowKeyCell || !helpers.matches(rowKeyCell.textContent ?? '', query.row.value)) {
+              continue;
+            }
+
+            const target = cells[resultColumnIndex];
+
+            if (target && target !== rowHeader && target !== resultHeader) {
+              results.push(target);
+            }
+          }
         }
       }
     }
 
     return [...new Set(results)];
-  }, strategy.query);
+  }
+
+  const results: Element[] = [];
+
+  const containers = [...document.querySelectorAll('body *')].filter((element) =>
+    helpers.matchesDescriptor(element, query.container),
+  );
+
+  for (const container of containers) {
+    const targets = [...container.querySelectorAll('*')].filter((element) =>
+      helpers.matchesDescriptor(element, query.target),
+    );
+
+    if (query.target.zeroBasedIndex === undefined) {
+      results.push(...targets);
+    } else {
+      const selected = targets[query.target.zeroBasedIndex];
+
+      if (selected) {
+        results.push(selected);
+      }
+    }
+  }
+
+  return [...new Set(results)];
+}
+
+async function structuralHandles(
+  page: Page,
+  strategy: Extract<TargetStrategy, { kind: 'structural' }>,
+): Promise<ElementHandle<HTMLElement | SVGElement>[]> {
+  const arrayHandle = await page.evaluateHandle(resolveStructuralQuery, strategy.query);
 
   try {
     const properties = await arrayHandle.getProperties();

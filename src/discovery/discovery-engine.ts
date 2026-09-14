@@ -111,6 +111,7 @@ export interface DiscoveryRunOptions {
   signal?: AbortSignal;
   runId?: string;
   evidenceRoot?: string;
+  headed?: boolean;
   screenshotEvidence?: DiscoveryScreenshotEvidenceMode;
 }
 
@@ -278,6 +279,7 @@ export class DiscoveryEngine {
       runId,
       mode: 'DISCOVERY',
       timeoutMs: requestedConfig.timeoutMs,
+      ...(runOptions.headed === undefined ? {} : { headed: runOptions.headed }),
       ...(runOptions.evidenceRoot === undefined ? {} : { evidenceRoot: runOptions.evidenceRoot }),
       metadata: {
         application: request.target.application,

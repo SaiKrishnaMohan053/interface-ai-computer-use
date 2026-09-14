@@ -23,10 +23,19 @@ function targetSemantics(decision: ActionableDiscoveryDecision): string {
   }
 
   if (decision.kind === 'dismiss') {
-    return decision.dialog.kind === 'surface' ? JSON.stringify(decision.dialog.target) : '';
+    return decision.dialog.kind === 'surface'
+      ? JSON.stringify(decision.dialog.target.strategies)
+      : '';
   }
 
-  return JSON.stringify(decision.target);
+  /*
+   * Target descriptions are model-written rationale and
+   * are not authoritative risk evidence.
+   *
+   * Semantic strategies must later resolve against the
+   * observed surface, so they are the trusted input here.
+   */
+  return JSON.stringify(decision.target.strategies);
 }
 
 /**
