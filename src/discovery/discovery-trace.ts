@@ -45,6 +45,7 @@ export const discoveryTraceRecordSchema = z.discriminatedUnion('kind', [
       controlCount: z.number().int().nonnegative(),
 
       dialogCount: z.number().int().nonnegative(),
+      evidenceRefs: z.array(runtimeEvidenceReferenceSchema),
     })
     .strict(),
 
@@ -153,7 +154,9 @@ export function recordDiscoveryTrace(sink: DiscoveryTraceSink, input: unknown): 
     result: record,
 
     evidenceRefs:
-      record.kind === 'action_result' || record.kind === 'condition_result'
+      record.kind === 'observation' ||
+      record.kind === 'action_result' ||
+      record.kind === 'condition_result'
         ? record.evidenceRefs
         : [],
   });

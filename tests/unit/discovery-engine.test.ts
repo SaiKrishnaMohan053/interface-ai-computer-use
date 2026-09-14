@@ -33,11 +33,13 @@ import type {
   FinishRunInput,
   RecordEventInput,
   RunEvidenceSummary,
+  CaptureScreenshotInput,
 } from '../../src/evidence/index.js';
 import type { SessionManager } from '../../src/session/index.js';
 
 const ENTRY_URL = 'https://bank.test/member-search';
 const NOW = '2026-09-11T16:00:00.000Z';
+const PNG_BYTES = Uint8Array.from([137, 80, 78, 71, 13, 10, 26, 10, 0]);
 
 const readTarget = {
   description: 'Savings current balance',
@@ -105,6 +107,7 @@ class FakeSurface implements SurfaceAdapter<TargetStrategy> {
   readonly resolutionRequests: TargetResolutionRequest<TargetStrategy>[] = [];
   readonly performed: ActionExecutionRequest[] = [];
   actionFailure: SurfaceFailure | null = null;
+  readonly evidenceRequests: EvidenceCaptureRequest[] = [];
 
   observe(options: ObservationOptions): Promise<ObservationResult> {
     void options;
@@ -215,15 +218,18 @@ class FakeSurface implements SurfaceAdapter<TargetStrategy> {
     request: EvidenceCaptureRequest,
     options: SurfaceOperationOptions,
   ): Promise<EvidenceCaptureResult> {
-    void request;
     void options;
+
+    this.evidenceRequests.push(request);
+
     return Promise.resolve({
-      status: 'failure',
-      error: {
-        code: 'UNSUPPORTED_OPERATION',
-        message: 'Not required by this unit test',
-        expected: null,
-        observed: null,
+      status: 'success',
+      evidence: {
+        ...this.scope,
+        kind: 'screenshot',
+        mediaType: 'image/png',
+        capturedAt: NOW,
+        bytes: PNG_BYTES,
       },
     });
   }
@@ -250,6 +256,9 @@ class FakeModel implements DiscoveryDecisionModel {
 class FakeCoordinator implements DiscoveryCoordinator {
   readonly events: RecordEventInput[] = [];
   readonly finishedStatuses: string[] = [];
+  readonly screenshots: CaptureScreenshotInput[] = [];
+
+  startOptions: StartCoordinatedRunOptions | null = null;
 
   constructor(
     private readonly surface: SurfaceAdapter<TargetStrategy>,
@@ -257,11 +266,25 @@ class FakeCoordinator implements DiscoveryCoordinator {
   ) {}
 
   start(options: StartCoordinatedRunOptions): Promise<CoordinatedRunContext<TargetStrategy>> {
-    void options;
+    this.startOptions = options;
     const evidenceRecorder = {
       recordEvent: (event: RecordEventInput) => {
         this.events.push(event);
         return Promise.resolve();
+      },
+      captureScreenshot: (input: CaptureScreenshotInput) => {
+        this.screenshots.push(input);
+
+        const sequence = this.screenshots.length.toString().padStart(4, '0');
+
+        return Promise.resolve({
+          evidenceId: `screenshot-${sequence}`,
+          runId: options.runId,
+          kind: 'screenshot' as const,
+          relativePath: `${options.runId}/screenshots/` + `screenshot-${sequence}.png`,
+          mediaType: 'image/png',
+          capturedAt: input.capturedAt ?? NOW,
+        });
       },
     } as unknown as EvidenceRecorder;
 
@@ -439,6 +462,67 @@ describe('DiscoveryEngine', () => {
         'runtime_event',
       ]),
     );
+  });
+
+  it('captures useful screenshots only for an explicitly synthetic discovery run', async () => {
+    const fixture = engine([
+      {
+        kind: 'read',
+        target: readTarget,
+        source: 'text',
+        saveAs: 'savingsBalance',
+        reason: 'Read the visible balance',
+      },
+      {
+        kind: 'complete',
+        summary: 'Read the Savings balance',
+        outputs: {
+          savingsBalance: '$12,840.50',
+        },
+      },
+    ]);
+
+    await expect(
+      fixture.discovery.run(request(), {
+        runId: 'discovery-lookup-savings-balance',
+        evidenceRoot: 'evidence',
+        screenshotEvidence: 'synthetic_fixture',
+      }),
+    ).resolves.toMatchObject({
+      status: 'success',
+    });
+
+    expect(fixture.coordinator.startOptions).toMatchObject({
+      runId: 'discovery-lookup-savings-balance',
+      evidenceRoot: 'evidence',
+    });
+
+    expect(fixture.surface.evidenceRequests).toEqual([
+      {
+        kind: 'screenshot',
+        extent: 'viewport',
+      },
+      {
+        kind: 'screenshot',
+        extent: 'viewport',
+      },
+    ]);
+
+    expect(fixture.coordinator.screenshots).toHaveLength(2);
+
+    expect(fixture.coordinator.screenshots[0]?.dataHandling).toBe('SYNTHETIC_FIXTURE_ONLY');
+
+    const observationEvents = fixture.coordinator.events.filter(
+      (event) => event.eventType === 'observation',
+    );
+
+    expect(observationEvents).toHaveLength(2);
+
+    expect(observationEvents[0]?.evidenceRefs).toMatchObject([
+      {
+        kind: 'screenshot',
+      },
+    ]);
   });
 
   it('retries one invalid model decision and then returns a typed validation failure', async () => {

@@ -7,6 +7,7 @@ import { resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import {
   sanitizeForPersistence,
+  serializeSanitized,
   serializeSanitizedLine,
 } from '../security/index.js';
 import type {
@@ -245,6 +246,11 @@ export class EvidenceRecorder {
       'events.jsonl',
     );
 
+        const runPath = resolve(
+      runDirectory,
+      'run.json',
+    );
+
     await mkdir(evidenceRoot, {
       recursive: true,
     });
@@ -295,14 +301,32 @@ export class EvidenceRecorder {
       ],
     });
 
-    await writeFile(
-      eventsPath,
-      serializeEvent(startEvent),
-      {
-        encoding: 'utf8',
-        flag: 'wx',
-      },
-    );
+        await Promise.all([
+      writeFile(
+        runPath,
+        serializeSanitized(
+          sanitizeForPersistence({
+            runId: options.runId,
+            mode: options.mode,
+            startedAt,
+            metadata: options.metadata ?? null,
+          }),
+        ),
+        {
+          encoding: 'utf8',
+          flag: 'wx',
+        },
+      ),
+
+      writeFile(
+        eventsPath,
+        serializeEvent(startEvent),
+        {
+          encoding: 'utf8',
+          flag: 'wx',
+        },
+      ),
+    ]);
 
     return recorder;
   }
@@ -517,6 +541,32 @@ export class EvidenceRecorder {
             ],
           }),
         ),
+      );
+
+            await writeFile(
+        resolve(
+          this.runDirectory,
+          'result.json',
+        ),
+        serializeSanitized(
+          sanitizeForPersistence({
+            runId: this.runId,
+            mode: this.mode,
+            status: input.status,
+            startedAt: this.startedAt,
+            finishedAt,
+            durationMs:
+              finishedTime - startedTime,
+            result: input.result,
+            evidenceRefs: [
+              ...this.references,
+            ],
+          }),
+        ),
+        {
+          encoding: 'utf8',
+          flag: 'wx',
+        },
       );
 
       this.state = 'FINISHED';

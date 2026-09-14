@@ -15,6 +15,7 @@ import type {
   ResolvedTarget,
   SurfaceFailure,
   SurfaceObservation,
+  EvidenceReference,
 } from '../surface/index.js';
 import { TargetResolver } from '../targeting/index.js';
 import type { TargetStrategy } from '../targeting/index.js';
@@ -104,6 +105,9 @@ export interface DiscoveryEngineOptions {
 
 export interface DiscoveryRunOptions {
   signal?: AbortSignal;
+  runId?: string;
+  evidenceRoot?: string;
+  screenshotEvidence?: 'none' | 'synthetic_fixture';
 }
 
 interface ResolvedOptions {
@@ -249,7 +253,7 @@ export class DiscoveryEngine {
   async run(input: unknown, runOptions: DiscoveryRunOptions = {}): Promise<DiscoveryResult> {
     const request = parseDiscoveryRequest(input);
     const requestedConfig = resolveDiscoveryRunConfig(request);
-    const runId = this.createId();
+    const runId = runOptions.runId ?? this.createId();
     const startedAt = this.now();
     const maxSteps = Math.min(requestedConfig.maxSteps, this.options.maxSteps);
     const state = createDiscoveryRunState({
@@ -270,6 +274,11 @@ export class DiscoveryEngine {
       runId,
       mode: 'DISCOVERY',
       timeoutMs: requestedConfig.timeoutMs,
+      ...(runOptions.evidenceRoot === undefined
+        ? {}
+        : {
+            evidenceRoot: runOptions.evidenceRoot,
+          }),
       metadata: {
         application: request.target.application,
         goal: request.goal,
@@ -320,10 +329,17 @@ export class DiscoveryEngine {
           recentError: memory.recentError,
         });
 
+        const observationEvidenceRefs = await this.captureObservationEvidence(
+          context,
+          state,
+          runOptions,
+        );
+
         await context.evidenceRecorder.recordEvent({
           step: state.step,
           eventType: 'observation',
           result: agentObservation,
+          evidenceRefs: observationEvidenceRefs,
         });
 
         await recordDiscoveryTrace(context.evidenceRecorder, {
@@ -335,6 +351,7 @@ export class DiscoveryEngine {
           loading: agentObservation.loading,
           controlCount: agentObservation.controls.length,
           dialogCount: agentObservation.dialogs.length,
+          evidenceRefs: observationEvidenceRefs,
         });
 
         const applicationState = detectDiscoveryApplicationState(agentObservation);
@@ -1145,6 +1162,51 @@ export class DiscoveryEngine {
       maxTextLength: this.options.observationMaxTextLength,
       maxControls: this.options.observationMaxControls,
     });
+  }
+
+  private async captureObservationEvidence(
+    context: DiscoveryContext,
+    state: DiscoveryRunState,
+    runOptions: DiscoveryRunOptions,
+  ): Promise<readonly EvidenceReference[]> {
+    if (runOptions.screenshotEvidence !== 'synthetic_fixture') {
+      return [];
+    }
+
+    const captured = await context.surface.captureEvidence(
+      {
+        kind: 'screenshot',
+        extent: 'viewport',
+      },
+      this.operationOptions(state, runOptions.signal),
+    );
+
+    if (captured.status === 'failure') {
+      await context.evidenceRecorder.recordEvent({
+        step: state.step,
+        eventType: 'evidence_captured',
+        result: {
+          kind: 'screenshot',
+          status: 'failure',
+          error: captured.error,
+        },
+      });
+
+      return [];
+    }
+
+    if (captured.evidence.kind !== 'screenshot') {
+      return [];
+    }
+
+    const reference = await context.evidenceRecorder.captureScreenshot({
+      step: state.step,
+      bytes: captured.evidence.bytes,
+      capturedAt: captured.evidence.capturedAt,
+      dataHandling: 'SYNTHETIC_FIXTURE_ONLY',
+    });
+
+    return [reference];
   }
 
   private operationOptions(state: DiscoveryRunState, signal: AbortSignal | undefined) {
