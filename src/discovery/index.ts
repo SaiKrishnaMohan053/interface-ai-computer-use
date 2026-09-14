@@ -71,13 +71,18 @@ export type {
   DiscoveryLoopBudgetStopReason,
 } from './stopping-conditions.js';
 
-export { COMPLETION_REJECTION_CODES, verifyDiscoveryCompletion } from './completion-verifier.js';
+export {
+  COMPLETION_REJECTION_CODES,
+  verifyDiscoveryCompletion,
+  verifyDiscoveryGoalCompletion,
+} from './completion-verifier.js';
 
 export type {
   CompletionEvidenceState,
   CompletionRejectionCode,
   CompletionVerificationIssue,
   CompletionVerificationResult,
+  GoalCompletionVerificationInput,
 } from './completion-verifier.js';
 
 export { DISCOVERY_ESCALATION_SOURCES, createDiscoveryIntervention } from './escalation.js';

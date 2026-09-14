@@ -28,7 +28,7 @@ import type {
 import { getDiscoveryDecisionTarget, translateDiscoveryDecision } from './action-translator.js';
 import type { TranslatableDiscoveryDecision } from './action-translator.js';
 import { evaluateDiscoveryActionPolicy } from './discovery-policy-gate.js';
-import { verifyDiscoveryCompletion } from './completion-verifier.js';
+import { verifyDiscoveryGoalCompletion } from './completion-verifier.js';
 import { parseDiscoveryRequest, resolveDiscoveryRunConfig } from './contracts.js';
 import type { DiscoveryDecision } from './decision.js';
 import { createDiscoveryIntervention } from './escalation.js';
@@ -512,7 +512,11 @@ export class DiscoveryEngine {
         });
 
         if (decision.kind === 'complete') {
-          const verification = verifyDiscoveryCompletion(decision, state);
+          const verification = verifyDiscoveryGoalCompletion({
+            completion: decision,
+            evidence: state,
+            finalObservation: agentObservation,
+          });
           if (verification.status === 'verified') {
             appendDiscoveryStep(state, {
               step: state.step,
