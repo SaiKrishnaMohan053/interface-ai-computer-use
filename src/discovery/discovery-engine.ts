@@ -56,6 +56,10 @@ import {
   evaluateDiscoveryLoopBudget,
   isHardDiscoveryActionFailure,
 } from './stopping-conditions.js';
+import {
+  planDiscoveryObservationScreenshot,
+  type DiscoveryScreenshotEvidenceMode,
+} from './screenshot-strategy.js';
 
 export const DEFAULT_DISCOVERY_MAX_STEPS = 25;
 export const DEFAULT_DISCOVERY_MAX_REPEATED_STATES = 3;
@@ -107,7 +111,7 @@ export interface DiscoveryRunOptions {
   signal?: AbortSignal;
   runId?: string;
   evidenceRoot?: string;
-  screenshotEvidence?: 'none' | 'synthetic_fixture';
+  screenshotEvidence?: DiscoveryScreenshotEvidenceMode;
 }
 
 interface ResolvedOptions {
@@ -336,6 +340,7 @@ export class DiscoveryEngine {
         const observationEvidenceRefs = await this.captureObservationEvidence(
           context,
           state,
+          memory,
           runOptions,
         );
 
@@ -1163,16 +1168,25 @@ export class DiscoveryEngine {
   private async captureObservationEvidence(
     context: DiscoveryContext,
     state: DiscoveryRunState,
+    memory: WorkingMemory,
     runOptions: DiscoveryRunOptions,
   ): Promise<readonly EvidenceReference[]> {
-    if (runOptions.screenshotEvidence !== 'synthetic_fixture') {
-      return [];
-    }
+    const plan = planDiscoveryObservationScreenshot({
+      evidenceMode: runOptions.screenshotEvidence ?? 'none',
+      step: state.step,
+      ...(memory.recentAction === null
+        ? {}
+        : {
+            recentActionKind: memory.recentAction.actionKind,
+          }),
+    });
+
+    if (plan === null) return [];
 
     const captured = await context.surface.captureEvidence(
       {
         kind: 'screenshot',
-        extent: 'viewport',
+        extent: plan.extent,
       },
       this.operationOptions(state, runOptions.signal),
     );
@@ -1184,9 +1198,11 @@ export class DiscoveryEngine {
         result: {
           kind: 'screenshot',
           status: 'failure',
-          error: captured.error,
+          purpose: plan.purpose,
+          errorCode: captured.error.code,
         },
       });
+
       return [];
     }
 
@@ -1198,7 +1214,19 @@ export class DiscoveryEngine {
       step: state.step,
       bytes: captured.evidence.bytes,
       capturedAt: captured.evidence.capturedAt,
-      dataHandling: 'SYNTHETIC_FIXTURE_ONLY',
+      dataHandling: plan.dataHandling,
+    });
+
+    await context.evidenceRecorder.recordEvent({
+      step: state.step,
+      eventType: 'evidence_captured',
+      result: {
+        kind: 'screenshot',
+        status: 'success',
+        purpose: plan.purpose,
+        dataHandling: plan.dataHandling,
+      },
+      evidenceRefs: [reference],
     });
 
     return [reference];

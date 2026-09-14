@@ -186,6 +186,19 @@ export type {
 } from './discovery-evidence-events.js';
 
 export {
+  DISCOVERY_SCREENSHOT_EVIDENCE_MODES,
+  DISCOVERY_SCREENSHOT_PURPOSES,
+  planDiscoveryObservationScreenshot,
+} from './screenshot-strategy.js';
+
+export type {
+  DiscoveryScreenshotEvidenceMode,
+  DiscoveryScreenshotPlan,
+  DiscoveryScreenshotPlanInput,
+  DiscoveryScreenshotPurpose,
+} from './screenshot-strategy.js';
+
+export {
   DEFAULT_DISCOVERY_CONDITION_POLL_INTERVAL_MS,
   DEFAULT_DISCOVERY_MAX_REPEATED_STATES,
   DEFAULT_DISCOVERY_OPERATION_TIMEOUT_MS,

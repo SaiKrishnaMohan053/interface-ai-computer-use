@@ -511,6 +511,38 @@ describe('DiscoveryEngine', () => {
     ]);
     expect(fixture.coordinator.screenshots).toHaveLength(2);
     expect(fixture.coordinator.screenshots[0]?.dataHandling).toBe('SYNTHETIC_FIXTURE_ONLY');
+    const screenshotEvents = fixture.coordinator.events.filter(
+      (event) => event.eventType === 'evidence_captured',
+    );
+
+    expect(screenshotEvents).toMatchObject([
+      {
+        result: {
+          kind: 'screenshot',
+          status: 'success',
+          purpose: 'initial_state',
+          dataHandling: 'SYNTHETIC_FIXTURE_ONLY',
+        },
+        evidenceRefs: [
+          {
+            kind: 'screenshot',
+          },
+        ],
+      },
+      {
+        result: {
+          kind: 'screenshot',
+          status: 'success',
+          purpose: 'step_observation',
+          dataHandling: 'SYNTHETIC_FIXTURE_ONLY',
+        },
+        evidenceRefs: [
+          {
+            kind: 'screenshot',
+          },
+        ],
+      },
+    ]);
 
     const observationEvents = fixture.coordinator.events.filter(
       (event) => event.eventType === 'observation',
