@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { PolicyEngine } from '../../src/policy/index.js';
-import type { PolicyActionKind, PolicyDecisionKind } from '../../src/policy/index.js';
+import type { PolicyActionKind, PolicyDecisionKind, RiskLevel } from '../../src/policy/index.js';
 import type { CoordinatedRunContext, StartCoordinatedRunOptions } from '../../src/runtime/index.js';
 import type {
   ActionExecutionRequest,
@@ -70,6 +70,43 @@ const buttonTarget = {
       },
     },
   ],
+  cardinality: 'exactly-one' as const,
+};
+
+const memberNameTarget = {
+  description: 'Member name input',
+
+  strategies: [
+    {
+      kind: 'label' as const,
+
+      label: {
+        value: 'Member Name',
+        mode: 'exact' as const,
+        caseSensitive: false,
+      },
+    },
+  ],
+
+  cardinality: 'exactly-one' as const,
+};
+
+const irreversibleTarget = {
+  description: 'Create sub-account',
+
+  strategies: [
+    {
+      kind: 'role-name' as const,
+      role: 'button',
+
+      name: {
+        value: 'Create Sub-Account',
+        mode: 'exact' as const,
+        caseSensitive: false,
+      },
+    },
+  ],
+
   cardinality: 'exactly-one' as const,
 };
 
@@ -342,6 +379,8 @@ class FakeCoordinator implements DiscoveryCoordinator {
 
 function policy(
   overrides: Partial<Record<PolicyActionKind, PolicyDecisionKind>> = {},
+
+  riskOverrides: Partial<Record<PolicyActionKind, RiskLevel>> = {},
 ): PolicyEngine {
   const actions: PolicyActionKind[] = [
     'click',
@@ -372,9 +411,11 @@ function policy(
       ruleId: `${action}-rule`,
       description: `${action} test rule`,
       match: { actions: [action], routeIds: ['bank'] },
-      riskLevel: ['type', 'select', 'check', 'uncheck', 'dismiss'].includes(action)
-        ? 'REVERSIBLE'
-        : 'READ_ONLY',
+      riskLevel:
+        riskOverrides[action] ??
+        (['type', 'select', 'check', 'uncheck', 'dismiss'].includes(action)
+          ? 'REVERSIBLE'
+          : 'READ_ONLY'),
       decision: overrides[action] ?? 'ALLOW',
     })),
   });
@@ -400,6 +441,7 @@ function engine(
     readonly surface?: FakeSurface;
     readonly policyEngine?: PolicyEngine;
     readonly maxRepeatedStates?: number;
+    readonly now?: () => Date;
   } = {},
 ) {
   const surface = options.surface ?? new FakeSurface();
@@ -415,7 +457,7 @@ function engine(
       { coordinator, model },
       {
         createId: () => `generated-${++id}`,
-        now: () => new Date(NOW),
+        now: options.now ?? (() => new Date(NOW)),
         ...(options.maxRepeatedStates === undefined
           ? {}
           : { maxRepeatedStates: options.maxRepeatedStates }),
@@ -425,6 +467,145 @@ function engine(
 }
 
 describe('DiscoveryEngine', () => {
+  it('orchestrates observe, type, click, read, and verified completion', async () => {
+    const fixture = engine(
+      [
+        {
+          kind: 'type',
+          target: memberNameTarget,
+          text: 'Alex Morgan',
+          mode: 'replace',
+          reason: 'Enter the member name',
+        },
+
+        {
+          kind: 'click',
+          target: buttonTarget,
+          reason: 'Open accounts',
+        },
+
+        {
+          kind: 'read',
+          target: readTarget,
+          source: 'text',
+          saveAs: 'savingsBalance',
+          reason: 'Read the visible Savings balance',
+        },
+
+        {
+          kind: 'complete',
+          summary: 'Read the Savings balance',
+
+          outputs: {
+            savingsBalance: '$12,840.50',
+          },
+        },
+      ],
+
+      {
+        /*
+         * FakeSurface deliberately returns the
+         * same observation. Raise this threshold
+         * because this test verifies orchestration,
+         * not stuck detection.
+         */
+        maxRepeatedStates: 10,
+      },
+    );
+
+    await expect(fixture.discovery.run(request())).resolves.toMatchObject({
+      status: 'success',
+      steps: 4,
+
+      outputs: {
+        savingsBalance: '$12,840.50',
+      },
+    });
+
+    expect(fixture.model.inputs).toHaveLength(4);
+
+    expect(fixture.surface.resolutionRequests).toHaveLength(3);
+
+    expect(fixture.surface.performed.map((entry) => entry.action.kind)).toEqual([
+      'type',
+      'click',
+      'read',
+    ]);
+
+    expect(fixture.coordinator.finishedStatuses).toEqual(['success']);
+  });
+
+  it('does not execute a navigation decision denied by policy', async () => {
+    const fixture = engine(
+      [
+        {
+          kind: 'navigate',
+          destination: 'https://untrusted.test/member-search',
+          reason: 'Navigate to an unapproved origin',
+        },
+      ],
+
+      {
+        policyEngine: policy(),
+      },
+    );
+
+    await expect(fixture.discovery.run(request())).resolves.toMatchObject({
+      status: 'failure',
+
+      error: {
+        code: 'POLICY_DENIED',
+        expected: 'an action allowed by deterministic policy',
+        observed: 'navigate',
+      },
+    });
+
+    expect(fixture.surface.performed).toHaveLength(0);
+
+    expect(fixture.coordinator.finishedStatuses).toEqual(['failure']);
+  });
+
+  it('requires human approval for an irreversible action without executing it', async () => {
+    const fixture = engine(
+      [
+        {
+          kind: 'click',
+          target: irreversibleTarget,
+          reason: 'Create the reviewed sub-account',
+        },
+      ],
+
+      {
+        policyEngine: policy(
+          {
+            click: 'REQUIRE_HUMAN',
+          },
+          {
+            click: 'IRREVERSIBLE',
+          },
+        ),
+      },
+    );
+
+    await expect(fixture.discovery.run(request())).resolves.toMatchObject({
+      status: 'intervention_required',
+
+      intervention: {
+        code: 'HUMAN_APPROVAL_REQUIRED',
+
+        context: {
+          source: 'policy',
+          actionKind: 'click',
+          riskLevel: 'IRREVERSIBLE',
+        },
+      },
+    });
+
+    expect(fixture.surface.performed).toHaveLength(0);
+
+    expect(fixture.coordinator.finishedStatuses).toEqual(['intervention_required']);
+  });
+
   it('completes only with output extracted by a successful surface read', async () => {
     const fixture = engine([
       {
@@ -862,7 +1043,17 @@ describe('DiscoveryEngine', () => {
       { surface },
     );
 
-    await fixture.discovery.run(request());
+    await expect(fixture.discovery.run(request())).resolves.toMatchObject({
+      status: 'intervention_required',
+
+      intervention: {
+        code: 'AUTOMATION_STUCK',
+
+        context: {
+          source: 'model',
+        },
+      },
+    });
 
     expect(surface.resolutionRequests.map((entry) => entry.strategyIndex)).toEqual([0, 1]);
     expect(surface.performed).toHaveLength(0);
@@ -949,6 +1140,43 @@ describe('DiscoveryEngine', () => {
     });
 
     expect(fixture.surface.performed).toHaveLength(0);
+
+    expect(fixture.coordinator.finishedStatuses).toEqual(['failure']);
+  });
+
+  it('stops with MAX_STEPS_EXCEEDED before requesting another model decision', async () => {
+    const waitDecision = {
+      kind: 'wait',
+      condition: {
+        kind: 'loadingComplete',
+      },
+      reason: 'Continue waiting without completing',
+    };
+
+    const fixture = engine([waitDecision, waitDecision], {
+      maxRepeatedStates: 10,
+    });
+
+    await expect(
+      fixture.discovery.run({
+        ...request(),
+
+        limits: {
+          maxSteps: 2,
+          timeoutMs: 30_000,
+        },
+      }),
+    ).resolves.toMatchObject({
+      status: 'failure',
+      steps: 2,
+
+      error: {
+        code: 'MAX_STEPS_EXCEEDED',
+        observed: 'max_steps',
+      },
+    });
+
+    expect(fixture.model.inputs).toHaveLength(2);
 
     expect(fixture.coordinator.finishedStatuses).toEqual(['failure']);
   });
@@ -1115,5 +1343,33 @@ describe('DiscoveryEngine', () => {
     });
     expect(fixture.model.inputs).toHaveLength(0);
     expect(surface.performed).toHaveLength(0);
+  });
+
+  it('stops at the run deadline without asking the model or executing an action', async () => {
+    let clockReads = 0;
+
+    const fixture = engine([], {
+      now: () => {
+        clockReads += 1;
+
+        return new Date(clockReads === 1 ? NOW : '2026-09-11T16:00:30.000Z');
+      },
+    });
+
+    await expect(fixture.discovery.run(request())).resolves.toMatchObject({
+      status: 'failure',
+      steps: 0,
+
+      error: {
+        code: 'RUN_TIMEOUT',
+        observed: 'run_timeout',
+      },
+    });
+
+    expect(fixture.model.inputs).toHaveLength(0);
+
+    expect(fixture.surface.performed).toHaveLength(0);
+
+    expect(fixture.coordinator.finishedStatuses).toEqual(['failure']);
   });
 });

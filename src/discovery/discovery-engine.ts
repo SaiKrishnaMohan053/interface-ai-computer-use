@@ -311,7 +311,7 @@ export class DiscoveryEngine {
 
         if (budgetStop !== null) {
           return this.finishFailure(context, state, {
-            code: 'RUN_TIMEOUT',
+            code: budgetStop === 'max_steps' ? 'MAX_STEPS_EXCEEDED' : 'RUN_TIMEOUT',
             message:
               budgetStop === 'cancelled'
                 ? 'Discovery was cancelled'
