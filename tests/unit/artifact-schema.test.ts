@@ -54,6 +54,33 @@ function validArtifact(): CapabilityArtifact {
 
     steps: [
       {
+        id: 'enter-member-name',
+        description: 'Enter the member name used for search.',
+        action: {
+          kind: 'type',
+          value: {
+            inputRef: 'memberName',
+          },
+          mode: 'replace',
+        },
+        target: {
+          description: 'Member Name input',
+          strategies: [
+            {
+              kind: 'role-name',
+              role: 'textbox',
+              name: {
+                value: 'Member Name',
+                mode: 'exact',
+                caseSensitive: false,
+              },
+            },
+          ],
+          cardinality: 'exactly-one',
+        },
+        risk: 'REVERSIBLE',
+      },
+      {
         id: 'open-accounts',
         description: 'Open the member Accounts view.',
         action: {
@@ -117,6 +144,24 @@ function validArtifact(): CapabilityArtifact {
 }
 
 describe('CapabilityArtifact schema', () => {
+  it('persists the member search value as an input reference rather than a discovery literal', () => {
+    const artifact = validArtifact();
+
+    const typeStep = artifact.steps.find((step) => step.action.kind === 'type');
+
+    expect(typeStep).toBeDefined();
+
+    expect(typeStep?.action).toEqual({
+      kind: 'type',
+      value: {
+        inputRef: 'memberName',
+      },
+      mode: 'replace',
+    });
+
+    expect(JSON.stringify(artifact)).not.toContain('Alex Morgan');
+  });
+
   it('parses a valid JSON-serializable capability artifact', () => {
     const artifact = validArtifact();
 
@@ -205,7 +250,11 @@ describe('CapabilityArtifact schema', () => {
   it('reuses the existing semantic TargetSpec contract', () => {
     const artifact = validArtifact();
 
-    expect(artifact.steps[0]?.target?.strategies[0]).toEqual({
+    const accountsStep = artifact.steps.find((step) => step.id === 'open-accounts');
+
+    expect(accountsStep).toBeDefined();
+
+    expect(accountsStep?.target?.strategies[0]).toEqual({
       kind: 'role-name',
       role: 'link',
       name: {

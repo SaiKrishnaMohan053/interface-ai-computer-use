@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 import { conditionSpecSchema } from '../conditions/index.js';
-import { policyActionKindSchema, riskLevelSchema } from '../policy/index.js';
+import { riskLevelSchema } from '../policy/index.js';
 import { targetSpecSchema } from '../targeting/index.js';
 import { artifactSchemaVersionSchema, capabilityVersionSchema } from './artifact-version.js';
 
@@ -71,6 +71,12 @@ export const capabilityInputSchema = z
   })
   .strict();
 
+export const capabilityInputReferenceSchema = z
+  .object({
+    inputRef: identifierSchema,
+  })
+  .strict();
+
 export const capabilityOutputSchema = z
   .object({
     name: identifierSchema,
@@ -86,11 +92,38 @@ export const capabilityOutputSchema = z
  * Typed value bindings, read output bindings, and other action-specific
  * payloads are introduced by the dedicated binding/action-schema steps.
  */
-export const capabilityActionSchema = z
+const simpleCapabilityActionSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('click') }).strict(),
+  z.object({ kind: z.literal('check') }).strict(),
+  z.object({ kind: z.literal('uncheck') }).strict(),
+  z.object({ kind: z.literal('navigate') }).strict(),
+  z.object({ kind: z.literal('read') }).strict(),
+  z.object({ kind: z.literal('wait') }).strict(),
+  z.object({ kind: z.literal('dismiss') }).strict(),
+]);
+
+const typedInputActionSchema = z
   .object({
-    kind: policyActionKindSchema,
+    kind: z.literal('type'),
+
+    value: capabilityInputReferenceSchema,
+
+    mode: z.enum(['replace', 'append']),
   })
   .strict();
+
+/**
+ * Phase 3.6 introduces input-bound typing.
+ *
+ * Literal invocation values are intentionally not part of the persisted
+ * type action contract. The action points to a declared artifact input.
+ *
+ * Select bindings are introduced when their value semantics are defined.
+ */
+export const capabilityActionSchema = z.union([
+  typedInputActionSchema,
+  simpleCapabilityActionSchema,
+]);
 
 export const capabilityStepSchema = z
   .object({
