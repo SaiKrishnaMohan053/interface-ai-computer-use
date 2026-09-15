@@ -39,7 +39,7 @@ function validArtifact(): CapabilityArtifact {
         name: 'savingsBalance',
         type: 'currency',
         required: true,
-        description: 'Current balance of the member Savings account.',
+        description: "Current balance of the member's Savings account.",
       },
     ],
 
@@ -104,6 +104,56 @@ function validArtifact(): CapabilityArtifact {
         },
         risk: 'READ_ONLY',
       },
+      {
+        id: 'read-savings-balance',
+        description: 'Read the current balance of the Savings account.',
+        action: {
+          kind: 'read',
+          saveAs: {
+            kind: 'outputRef',
+            name: 'savingsBalance',
+          },
+        },
+        target: {
+          description: 'Savings Current Balance cell in Accounts table',
+          strategies: [
+            {
+              kind: 'structural',
+              query: {
+                kind: 'table-cell',
+                table: {
+                  name: {
+                    value: 'Accounts',
+                    mode: 'contains',
+                    caseSensitive: false,
+                  },
+                },
+                row: {
+                  columnHeader: {
+                    value: 'Account Type',
+                    mode: 'exact',
+                    caseSensitive: false,
+                  },
+                  value: {
+                    value: 'Savings',
+                    mode: 'exact',
+                    caseSensitive: false,
+                  },
+                },
+                column: {
+                  header: {
+                    value: 'Current Balance',
+                    mode: 'exact',
+                    caseSensitive: false,
+                  },
+                },
+              },
+            },
+          ],
+          cardinality: 'exactly-one',
+        },
+        risk: 'READ_ONLY',
+      },
     ],
 
     knownBusinessOutcomes: [
@@ -145,6 +195,37 @@ function validArtifact(): CapabilityArtifact {
 }
 
 describe('CapabilityArtifact schema', () => {
+  it('binds the Savings read step to the declared reusable output', () => {
+    const artifact = validArtifact();
+
+    const readStep = artifact.steps.find((step) => step.id === 'read-savings-balance');
+
+    expect(readStep).toBeDefined();
+
+    expect(readStep?.action).toEqual({
+      kind: 'read',
+      saveAs: {
+        kind: 'outputRef',
+        name: 'savingsBalance',
+      },
+    });
+
+    expect(artifact.outputs).toContainEqual({
+      name: 'savingsBalance',
+      type: 'currency',
+      required: true,
+      description: "Current balance of the member's Savings account.",
+    });
+  });
+
+  it('does not persist the discovery balance as an artifact output value', () => {
+    const artifact = validArtifact();
+
+    const serialized = JSON.stringify(artifact);
+
+    expect(serialized).not.toContain('$12,840.50');
+  });
+
   it('persists the member search value as an input reference rather than a discovery literal', () => {
     const artifact = validArtifact();
 

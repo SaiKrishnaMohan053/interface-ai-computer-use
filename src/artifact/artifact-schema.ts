@@ -78,6 +78,13 @@ export const capabilityInputBindingSchema = z
   })
   .strict();
 
+export const capabilityOutputBindingSchema = z
+  .object({
+    kind: z.literal('outputRef'),
+    name: identifierSchema,
+  })
+  .strict();
+
 export const capabilityOutputSchema = z
   .object({
     name: identifierSchema,
@@ -98,10 +105,16 @@ const simpleCapabilityActionSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('check') }).strict(),
   z.object({ kind: z.literal('uncheck') }).strict(),
   z.object({ kind: z.literal('navigate') }).strict(),
-  z.object({ kind: z.literal('read') }).strict(),
   z.object({ kind: z.literal('wait') }).strict(),
   z.object({ kind: z.literal('dismiss') }).strict(),
 ]);
+
+const readCapabilityActionSchema = z
+  .object({
+    kind: z.literal('read'),
+    saveAs: capabilityOutputBindingSchema,
+  })
+  .strict();
 
 const typedInputActionSchema = z
   .object({
@@ -124,6 +137,7 @@ const typedInputActionSchema = z
 export const capabilityActionSchema = z.union([
   typedInputActionSchema,
   simpleCapabilityActionSchema,
+  readCapabilityActionSchema,
 ]);
 
 export const capabilityStepSchema = z

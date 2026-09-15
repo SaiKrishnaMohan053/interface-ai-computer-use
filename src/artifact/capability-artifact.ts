@@ -9,6 +9,7 @@ import type {
   capabilityInputSchema,
   capabilityMetadataSchema,
   capabilityOutputSchema,
+  capabilityOutputBindingSchema,
   capabilityProvenanceSchema,
   capabilityRiskMetadataSchema,
   capabilityStepSchema,
@@ -28,6 +29,8 @@ export type CapabilityInput = z.infer<typeof capabilityInputSchema>;
 export type CapabilityInputBinding = z.infer<typeof capabilityInputBindingSchema>;
 
 export type CapabilityOutput = z.infer<typeof capabilityOutputSchema>;
+
+export type CapabilityOutputBinding = z.infer<typeof capabilityOutputBindingSchema>;
 
 export type CapabilityAction = z.infer<typeof capabilityActionSchema>;
 
