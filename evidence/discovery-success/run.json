@@ -1,0 +1,13 @@
+{
+  "runId": "9635c0c9-dc3a-4b64-aa38-b1f48a359ea0",
+  "mode": "DISCOVERY",
+  "startedAt": "2026-09-15T18:17:26.762Z",
+  "metadata": {
+    "policyId": "assignment-discovery-policy",
+    "value": {
+      "application": "Demo Credit Union",
+      "goal": "Look up Alex Morgan and return their current savings balance.",
+      "maxSteps": 20
+    }
+  }
+}

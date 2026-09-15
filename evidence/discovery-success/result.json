@@ -1,0 +1,63 @@
+{
+  "runId": "9635c0c9-dc3a-4b64-aa38-b1f48a359ea0",
+  "mode": "DISCOVERY",
+  "status": "success",
+  "startedAt": "2026-09-15T18:17:26.762Z",
+  "finishedAt": "2026-09-15T18:17:49.008Z",
+  "durationMs": 22246,
+  "result": {
+    "outputs": {
+      "alexMorganSavingsBalance": "$12,840.50"
+    }
+  },
+  "evidenceRefs": [
+    {
+      "evidenceId": "87c6a9c8-93fc-4e6a-af37-fb444ad15b58",
+      "runId": "9635c0c9-dc3a-4b64-aa38-b1f48a359ea0",
+      "kind": "event_log",
+      "relativePath": "discovery-success/events.jsonl",
+      "mediaType": "application/x-ndjson",
+      "capturedAt": "2026-09-15T18:17:26.762Z"
+    },
+    {
+      "evidenceId": "6e269dad-5e93-44ff-980f-fd5d0cfb940d",
+      "runId": "9635c0c9-dc3a-4b64-aa38-b1f48a359ea0",
+      "kind": "screenshot",
+      "relativePath": "discovery-success/screenshots/screenshot-0001.png",
+      "mediaType": "image/png",
+      "capturedAt": "2026-09-15T18:17:28.313Z"
+    },
+    {
+      "evidenceId": "b1d3a20f-353b-4203-b7e6-75bfd299ccd9",
+      "runId": "9635c0c9-dc3a-4b64-aa38-b1f48a359ea0",
+      "kind": "screenshot",
+      "relativePath": "discovery-success/screenshots/screenshot-0002.png",
+      "mediaType": "image/png",
+      "capturedAt": "2026-09-15T18:17:33.140Z"
+    },
+    {
+      "evidenceId": "c7675644-ea05-45bc-9c88-e8b5a07f64af",
+      "runId": "9635c0c9-dc3a-4b64-aa38-b1f48a359ea0",
+      "kind": "screenshot",
+      "relativePath": "discovery-success/screenshots/screenshot-0003.png",
+      "mediaType": "image/png",
+      "capturedAt": "2026-09-15T18:17:36.437Z"
+    },
+    {
+      "evidenceId": "8b0b59f6-3388-47b6-b93e-2d17d3a9db9f",
+      "runId": "9635c0c9-dc3a-4b64-aa38-b1f48a359ea0",
+      "kind": "screenshot",
+      "relativePath": "discovery-success/screenshots/screenshot-0004.png",
+      "mediaType": "image/png",
+      "capturedAt": "2026-09-15T18:17:39.147Z"
+    },
+    {
+      "evidenceId": "b5bf617a-9086-4442-8436-410db64ac358",
+      "runId": "9635c0c9-dc3a-4b64-aa38-b1f48a359ea0",
+      "kind": "screenshot",
+      "relativePath": "discovery-success/screenshots/screenshot-0005.png",
+      "mediaType": "image/png",
+      "capturedAt": "2026-09-15T18:17:45.672Z"
+    }
+  ]
+}
