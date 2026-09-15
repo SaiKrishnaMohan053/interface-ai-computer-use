@@ -54,7 +54,7 @@ function validArtifact(): CapabilityArtifact {
 
     steps: [
       {
-        id: 'enter-member-name',
+        id: 'enter-member-search',
         description: 'Enter the member name used for search.',
         action: {
           kind: 'type',
@@ -78,6 +78,38 @@ function validArtifact(): CapabilityArtifact {
             },
           ],
           cardinality: 'exactly-one',
+        },
+        risk: 'REVERSIBLE',
+      },
+      {
+        id: 'submit-member-search',
+        description: 'Submit the member search.',
+        action: {
+          kind: 'click',
+        },
+        target: {
+          description: 'Search button',
+          strategies: [
+            {
+              kind: 'role-name',
+              role: 'button',
+              name: {
+                value: 'Search',
+                mode: 'exact',
+                caseSensitive: false,
+              },
+            },
+          ],
+          cardinality: 'exactly-one',
+        },
+        postconditions: [
+          {
+            kind: 'loadingComplete',
+          },
+        ],
+        wait: {
+          timeoutMs: 5_000,
+          pollIntervalMs: 100,
         },
         risk: 'REVERSIBLE',
       },
@@ -195,6 +227,17 @@ function validArtifact(): CapabilityArtifact {
 }
 
 describe('CapabilityArtifact schema', () => {
+  it('uses stable ordered step IDs for the reusable capability', () => {
+    const artifact = validArtifact();
+
+    expect(artifact.steps.map((step) => step.id)).toEqual([
+      'enter-member-search',
+      'submit-member-search',
+      'open-accounts',
+      'read-savings-balance',
+    ]);
+  });
+
   it('binds the Savings read step to the declared reusable output', () => {
     const artifact = validArtifact();
 

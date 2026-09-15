@@ -5,6 +5,9 @@ import type {
   capabilityArtifactSchema,
   capabilityCompatibilitySchema,
   capabilityIdentitySchema,
+  capabilityStepIdSchema,
+  recoveryPolicySchema,
+  waitPolicySchema,
   capabilityInputBindingSchema,
   capabilityInputSchema,
   capabilityMetadataSchema,
@@ -23,6 +26,12 @@ export type CapabilityValueType = z.infer<typeof capabilityValueTypeSchema>;
 export type CapabilityIdentity = z.infer<typeof capabilityIdentitySchema>;
 
 export type CapabilityCompatibility = z.infer<typeof capabilityCompatibilitySchema>;
+
+export type CapabilityStepId = z.infer<typeof capabilityStepIdSchema>;
+
+export type WaitPolicy = z.infer<typeof waitPolicySchema>;
+
+export type RecoveryPolicy = z.infer<typeof recoveryPolicySchema>;
 
 export type CapabilityInput = z.infer<typeof capabilityInputSchema>;
 

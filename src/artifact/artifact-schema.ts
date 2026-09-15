@@ -22,6 +22,39 @@ const capabilityIdSchema = z
   .max(200)
   .regex(/^[a-z][a-z0-9_]*$/, 'Capability ID must use lowercase snake_case');
 
+export const capabilityStepIdSchema = z
+  .string()
+  .trim()
+  .min(1, 'Step ID must not be empty')
+  .max(200)
+  .regex(/^[a-z][a-z0-9-]*$/, 'Step ID must use lowercase kebab-case');
+
+export const waitPolicySchema = z
+  .object({
+    timeoutMs: z.number().int().positive().max(60_000),
+
+    pollIntervalMs: z.number().int().positive().max(5_000),
+  })
+  .strict()
+  .superRefine((policy, context) => {
+    if (policy.pollIntervalMs > policy.timeoutMs) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Wait poll interval must not exceed its timeout',
+        path: ['pollIntervalMs'],
+      });
+    }
+  });
+
+export const recoveryPolicySchema = z
+  .object({
+    kind: z.literal('retry'),
+    maxAttempts: z.number().int().min(1).max(3),
+
+    wait: waitPolicySchema.optional(),
+  })
+  .strict();
+
 const nameSchema = z.string().trim().min(1, 'Name must not be empty').max(200);
 
 const descriptionSchema = z.string().trim().min(1, 'Description must not be empty').max(4_000);
@@ -142,21 +175,21 @@ export const capabilityActionSchema = z.union([
 
 export const capabilityStepSchema = z
   .object({
-    id: identifierSchema,
+    id: capabilityStepIdSchema,
+
     description: descriptionSchema,
 
     action: capabilityActionSchema,
 
-    /**
-     * Navigation and some future surface-neutral actions do not require
-     * an element target. Action/target compatibility is semantic validation,
-     * not top-level shape validation.
-     */
     target: targetSpecSchema.optional(),
 
-    preconditions: z.array(conditionSpecSchema).max(20).optional(),
+    preconditions: z.array(conditionSpecSchema).min(1).max(20).optional(),
 
-    postconditions: z.array(conditionSpecSchema).max(20).optional(),
+    wait: waitPolicySchema.optional(),
+
+    postconditions: z.array(conditionSpecSchema).min(1).max(20).optional(),
+
+    recovery: z.array(recoveryPolicySchema).min(1).max(5).optional(),
 
     risk: riskLevelSchema,
   })
