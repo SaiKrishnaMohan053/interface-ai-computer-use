@@ -128,7 +128,11 @@ describe('CapabilityArtifact schema', () => {
   it('rejects a missing schema version', () => {
     const artifact = validArtifact();
 
-    const { schemaVersion: _schemaVersion, ...withoutVersion } = artifact;
+    const withoutVersion: Record<string, unknown> = {
+      ...artifact,
+    };
+
+    delete withoutVersion.schemaVersion;
 
     expect(capabilityArtifactSchema.safeParse(withoutVersion).success).toBe(false);
   });
@@ -218,6 +222,27 @@ describe('CapabilityArtifact schema', () => {
       risk: {
         maxRisk: 'SOMETHING_ELSE',
         requiresHumanByDefault: false,
+      },
+    };
+
+    expect(capabilityArtifactSchema.safeParse(artifact).success).toBe(false);
+  });
+
+  it('rejects capability semantic versions in schemaVersion', () => {
+    const artifact = {
+      ...validArtifact(),
+      schemaVersion: '1.0.0',
+    };
+
+    expect(capabilityArtifactSchema.safeParse(artifact).success).toBe(false);
+  });
+
+  it('rejects schema-style versions as capability versions', () => {
+    const artifact = {
+      ...validArtifact(),
+      identity: {
+        ...validArtifact().identity,
+        version: '1.0',
       },
     };
 

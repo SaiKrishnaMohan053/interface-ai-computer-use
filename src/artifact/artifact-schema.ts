@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { conditionSpecSchema } from '../conditions/index.js';
 import { policyActionKindSchema, riskLevelSchema } from '../policy/index.js';
 import { targetSpecSchema } from '../targeting/index.js';
+import { artifactSchemaVersionSchema, capabilityVersionSchema } from './artifact-version.js';
 
 const identifierSchema = z
   .string()
@@ -38,7 +39,7 @@ export const capabilityIdentitySchema = z
   .object({
     id: identifierSchema,
     name: nameSchema,
-    version: versionTextSchema,
+    version: capabilityVersionSchema,
     description: descriptionSchema,
   })
   .strict();
@@ -159,7 +160,7 @@ export const capabilitySuccessConditionSchema = conditionSpecSchema;
  */
 export const capabilityArtifactSchema = z
   .object({
-    schemaVersion: versionTextSchema,
+    schemaVersion: artifactSchemaVersionSchema,
 
     identity: capabilityIdentitySchema,
 

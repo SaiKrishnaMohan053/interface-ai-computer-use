@@ -34,3 +34,14 @@ export type {
 } from './capability-artifact.js';
 
 export type { ArtifactErrorCode } from './artifact-errors.js';
+
+export {
+  CURRENT_ARTIFACT_SCHEMA_VERSION,
+  artifactSchemaVersionSchema,
+  capabilityVersionSchema,
+  isSupportedArtifactSchemaVersion,
+  parseArtifactSchemaVersion,
+  parseCapabilityVersion,
+} from './artifact-version.js';
+
+export type { ParsedCapabilityVersion, ParsedSchemaVersion } from './artifact-version.js';
