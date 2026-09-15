@@ -1,140 +1,207 @@
-﻿# 1. Architecture
+# 1. Architecture
 
-The system is a TypeScript modular monolith using Node.js, Playwright, Zod, and Vitest. A
-single process is sufficient for this assignment and keeps browser ownership, evidence order,
-and failure cleanup explicit. Queues and distributed services would add operational complexity
-without improving the core computer-use design.
+The system is implemented as a TypeScript modular monolith using Node.js, Playwright, Zod, and Vitest. A single process keeps browser ownership, evidence ordering, policy evaluation, and failure cleanup explicit. Distributed queues or services would add operational complexity without improving the assignment's core computer-use workflow.
 
-`SurfaceAdapter<TStrategy>` separates orchestration from the concrete UI technology. It
-defines observation, target resolution, action execution, condition evaluation, and in-memory
-evidence capture without exposing Playwright objects. `PlaywrightSurface` is the first
-implementation; a future desktop adapter can implement the same responsibilities.
+The main runtime boundaries are:
 
-`SessionManager` owns the Browser, BrowserContext, Page, state, and exclusive actor owner.
-`RunCoordinator` wires the outer run lifecycle: start evidence, create and activate the
-session, acquire discovery or replay ownership, create the surface, and close or fail resources.
-It deliberately contains no discovery or replay loop.
+- `DiscoveryEngine` owns the bounded observe, decide, validate, authorize, resolve, and act loop.
+- `DiscoveryDecisionModel` is the only interface through which the LLM participates.
+- `SurfaceAdapter` separates orchestration from the concrete UI technology.
+- `PlaywrightSurface` implements browser observation and execution.
+- `PolicyEngine` makes deterministic authorization decisions.
+- `TargetResolver` applies ordered semantic target strategies.
+- `SessionManager` owns the live browser session and exclusive actor ownership.
+- `EvidenceRecorder` persists sanitized run events and screenshots.
+- `RunCoordinator` manages run start, finish, and resource cleanup.
 
-The current handwritten integration path uses a real Chromium browser against a deterministic,
-fictional banking application. It covers member search, account navigation, semantic balance
-lookup, dialogs, slow loading, permission denial, session expiry, and application failure.
+The LLM receives a goal, a sanitized surface-neutral observation, bounded recent history, and the result of the previous step. It returns one typed decision such as `type`, `click`, `read`, `wait`, `dismiss`, `complete`, or `escalate`.
+
+The model does not receive Playwright objects and cannot directly execute browser operations. Every actionable decision follows this runtime-controlled path:
+
+```text
+LLM decision
+-> schema validation
+-> system risk classification
+-> policy evaluation
+-> semantic target resolution
+-> SurfaceAdapter execution
+```
+
+This boundary keeps probabilistic reasoning separate from trusted execution. The LLM proposes what should happen next, while deterministic runtime components decide whether and how it may happen.
+
+Playwright was selected because it provides a practical real browser surface for the assignment. Browser-specific handles remain private to the adapter so the discovery engine is not tied directly to DOM automation.
 
 # 2. Artifact schema
 
-The final capability artifact will be typed, versioned, parameterized, and independent of the
-raw LLM transcript. Discovery history, diagnostic evidence, and the reusable capability are
-separate records.
+The reusable capability artifact and artifact compiler are not implemented yet.
 
-Phase 1 establishes the lower-level contracts the artifact will reference: surface actions,
-conditions, target specifications, runtime outcomes, and evidence references. A target contains
-a description, ordered strategies, and `exactly-one` cardinality. Inputs such as member names
-will become parameters rather than recorded tenant or user values.
+Phase 2 keeps discovery data in an explicit run-scoped state. This includes:
 
-`ResolvedTarget` is intentionally not artifact data. It is a short-lived handle scoped to one
-session, surface, and observation. Persisting it would create a brittle replay capability.
+- Current step and run start time.
+- Observation fingerprints and repeated-state count.
+- Recently executed decisions and their outcomes.
+- Extracted values such as the Savings balance.
+- Structured discovery step records.
+- Sanitized evidence references.
 
-Capability schema validation, compilation, approval state, storage, and loading are deferred
-until the artifact phase.
+Extracted values are discovery working outputs only. They are not automatically treated as approved reusable capability outputs.
+
+The discovery trace is also separate from the future artifact. It records what occurred during the run, including observations, model decisions, concise decision reasons, policy results, target-resolution attempts, action results, extracted values, runtime events, and screenshots. It does not persist raw model responses or hidden chain-of-thought.
+
+A later artifact compiler will use successful discovery evidence to produce a typed and versioned capability containing:
+
+- Ordered steps and actions.
+- Typed invocation parameters.
+- Typed extracted outputs.
+- Semantic target specifications and ordered fallbacks.
+- Runtime conditions and checkpoints.
+- Capability identity and version information.
+
+Short-lived `ResolvedTarget` values will not be stored in the artifact. They are scoped to one surface, session, and observation and would be unsafe and brittle if reused.
 
 # 3. Determinism & error handling
 
-The Target Resolver evaluates strategies in order:
+Discovery is intentionally probabilistic because an LLM selects each next decision. The runtime surrounding that decision is deterministic and bounded.
+
+The model must return one structured decision that validates against the discovery decision schema. Invalid JSON, unsupported actions, missing targets, and invalid fields are rejected. One structured-output retry is allowed. If the second response is still invalid, the run returns `MODEL_DECISION_VALIDATION_FAILED`. There is no unbounded correction loop.
+
+The discovery run has configurable limits for:
+
+- Maximum steps.
+- Total run timeout.
+- Repeated observations without meaningful progress.
+- Model completion.
+- Model escalation.
+- Policy denial.
+- Required human intervention.
+- Hard surface-action failure.
+
+Observation fingerprints are produced deterministically from useful state such as URL, title, meaningful visible text, visible control signatures, and dialog signatures. Repeated equivalent states beyond the configured threshold produce a deliberate stuck or dead-end result. The model is not responsible for deciding whether the runtime is stuck.
+
+Target resolution evaluates strategies in order:
 
 ```text
-0 matches  â†’ try the next strategy
-1 match    â†’ success
->1 matches â†’ record ambiguity and try the next strategy
+0 matches    -> try the next strategy
+1 match      -> resolve the target
+many matches -> record ambiguity and try the next strategy
 ```
 
-After exhaustion it returns `TARGET_NOT_FOUND` or `TARGET_AMBIGUOUS`; it never silently
-chooses the first result. Strategies prefer role/name, label, text, and structural relationships,
-with CSS and XPath as explicit fallbacks. No test-ID convention is assumed.
+If all strategies fail, the resolver returns `TARGET_NOT_FOUND` or `TARGET_AMBIGUOUS`. The system never follows a model suggestion to click the first ambiguous match.
 
-The accounts-table primitive resolves a cell semantically: find the Accounts table, locate the
-row where Account Type is Savings, and read Current Balance. It derives row and column positions
-from headers and values instead of storing row 3 or column 4.
+The accounts-table read demonstrates structural targeting. It locates the Accounts table, finds the row where Account Type equals Savings, derives the Current Balance column from its header, and reads the corresponding cell. It does not depend on a recorded row or column number.
 
-Synchronization uses bounded polling and explicit timeouts for `elementVisible`,
-`elementAbsent`, `textPresent`, `urlMatches`, `valueEquals`, and
-`loadingComplete`. Every attempt prepares fresh target information. Ambiguity is an error,
-not evidence that an element is absent.
+Runtime application states are handled deliberately:
 
-Terminal results distinguish `success`, `business_outcome`, `intervention_required`, and
-`failure`. Expected business outcomes such as `MEMBER_NOT_FOUND` and
-`PERMISSION_DENIED` are separate from recoverable conditions and hard execution failures.
-The full replay classifier and bounded recovery behavior are deferred.
+- Normal state allows discovery to continue.
+- Slow loading triggers a bounded condition wait instead of repeated clicking.
+- Permission denial returns a structured business outcome.
+- Session expiry stops automation with a typed failure.
+- Application errors stop with a typed failure.
+- Known safe dialogs may be dismissed through normal policy and targeting.
+- Unknown or risky dialogs require escalation.
+
+An LLM `complete` decision does not automatically produce success. For the Savings lookup, completion is accepted only when a Savings balance has actually been extracted and the final observation supports the expected account context.
+
+The future replay path will not invoke an LLM for decisions. It will execute the compiled artifact deterministically and verify its declared checkpoint. Replay is not implemented yet.
 
 # 4. Heterogeneity & multi-tenant
 
-The orchestration boundary depends on `SurfaceAdapter`, not Playwright. A desktop,
-accessibility-tree, screenshot-coordinate, or OS-level adapter can provide the same observation
-and execution contract while keeping platform handles private.
+The orchestration layer depends on `SurfaceAdapter`, not directly on Playwright. The adapter is responsible for observing the current surface, resolving surface-specific targets, performing actions, evaluating conditions, and capturing in-memory evidence.
 
-The current Playwright collector intentionally covers the main document, standard HTML controls,
-and explicit ARIA dialogs. Frames, general shadow DOM, custom widgets, full accessibility-tree
-collection, and pixel targeting are future adapter improvements.
+The model consumes a surface-neutral observation containing:
 
-For institutions running variants of the same application, capability artifacts should
-parameterize origins, route values, and user inputs while preserving semantic targets and
-checkpoints. Tenant policy and browser sessions must remain isolated. Cross-tenant
-canonicalization and per-variant overrides are designed as later artifact features; production
-multi-tenant infrastructure is not part of this submission phase.
+- Current location.
+- Meaningful visible text.
+- Observable controls.
+- Dialogs and interstitials.
+- Loading state.
+- Surface context hints.
+
+Browser handles, cookies, authentication tokens, raw DOM objects, and Playwright locators are excluded.
+
+Model decisions use semantic `TargetSpec` descriptions with ordered strategies such as role and accessible name, label, visible text, structural table relationships, CSS, or XPath. Semantic and structural strategies are preferred, while implementation-specific selectors remain explicit fallbacks.
+
+This creates a seam for future legacy-web or desktop adapters. Another adapter could produce the same observation contract and resolve the same semantic intent using an accessibility tree, OS automation, screenshot coordinates, or another surface mechanism.
+
+Multi-tenant artifact reuse is not implemented yet. The future artifact design should separate reusable vendor-level workflow semantics from tenant-specific origin, route, branding, and selector overrides. Application and tenant versions should be explicit so drift can be detected rather than silently ignored.
 
 # 5. Escalation & handoff
 
-Session ownership is exclusive: `NONE`, `DISCOVERY`, `REPLAY`, or `HUMAN`.
-Automation operates only in an active session. Human ownership is allowed only while paused,
-and automation cannot resume until human ownership is transferred or released.
+Session ownership is exclusive: `NONE`, `DISCOVERY`, `REPLAY`, or `HUMAN`. Automation can act only while it owns an active session.
 
-Pause and resume preserve the same BrowserContext and Page, so a future operator will take over
-the live session rather than a new browser. Conflicting ownership changes are rejected.
+Discovery returns `intervention_required` when:
 
-The remaining handoff layer must detect a stuck or approval-required state, create an
-intervention request with current step and sanitized evidence, pause the session, transfer
-ownership to the operator, record human actions, and transfer ownership back before resuming.
-Phase 1 implements and tests the ownership seam but not the operator interface or stuck-state
-classifier.
+- Policy returns `REQUIRE_HUMAN`.
+- The model explicitly requests escalation.
+- An unknown or risky dialog is detected.
+- The runtime reaches a state that cannot be handled safely.
+
+The intervention record contains enough context for a future operator workflow, including the goal, current step, observation identity, current location, reason code, reason, and relevant evidence.
+
+The existing session lifecycle supports pausing automation, preserving the same BrowserContext and Page, transferring ownership to a human, and returning ownership to automation. This prevents handoff from opening a fresh session and losing application state.
+
+Phase 2 validates the escalation result and control-transfer seam, but it does not implement the full operator interface, real-time co-browsing transport, or complete resume-after-human workflow.
 
 # 6. Safety
 
-The Policy Engine validates the current URL origin, route, requested action, and matching risk
-rule. It is deterministic and defaults to denial. Risk comes from trusted configuration rather
-than an LLM or artifact claim.
+Policy enforcement is deterministic and fail-closed. The model cannot bypass, approve, or weaken a policy decision.
 
-Risk levels are `READ_ONLY`, `REVERSIBLE`, `SENSITIVE_WRITE`, and `IRREVERSIBLE`.
-Decisions are `ALLOW`, `DENY`, and `REQUIRE_HUMAN`. Sensitive or irreversible actions
-cannot be configured for automatic allowance.
+The system remains authoritative for risk classification. Model-provided intent may be considered as a hint, but it is not trusted as the final risk value.
 
-Target cardinality is exactly one. Foreign, stale, detached, or ambiguous targets are rejected.
-A cancelled or timed-out mutating Playwright operation invalidates the surface to prevent delayed
-execution. Dialogs are observed but never automatically accepted.
+Current discovery risk mapping includes:
 
-Before persistence, recursive sanitization redacts member identifiers, passwords, API keys,
-tokens, cookies, authorization headers, and nested sensitive strings. JSONL evidence is
-sanitized before serialization, not written raw and scrubbed afterward.
+- Read, navigation, and search actions as `READ_ONLY`.
+- Form typing before submission as `REVERSIBLE`.
+- Sensitive writes as `SENSITIVE_WRITE`.
+- Final create or submit actions as `IRREVERSIBLE`.
 
-JSON redaction cannot remove text from pixels. Screenshot evidence must therefore be synthetic
-or masked before capture. Playwright traces can contain raw browser metadata, so trace attachment
-is currently restricted to synthetic fixtures. Live-data trace export is unsupported rather
-than falsely presented as sanitized.
+Policy outcomes are:
+
+- `ALLOW`: target resolution and execution may continue.
+- `DENY`: return a structured policy-blocked failure.
+- `REQUIRE_HUMAN`: return `intervention_required`.
+
+Only `ALLOW` reaches target resolution or `SurfaceAdapter.perform()`.
+
+Target cardinality must be exactly one. Missing, stale, detached, foreign, and ambiguous targets are rejected. A cancelled or timed-out mutating browser action invalidates the surface so it cannot complete later without runtime supervision.
+
+Before persistence, evidence is recursively sanitized. API keys, tokens, cookies, authorization values, passwords, browser handles, raw OpenAI responses, and hidden reasoning are not persisted.
+
+Screenshots cannot be sanitized like structured JSON. Persistent screenshots are therefore restricted by the existing evidence policy. The genuine assignment run uses only the fictional banking fixture and explicitly enables synthetic screenshot persistence.
+
+The frozen evidence package was also scanned for common secret patterns and the configured OpenAI API key before being staged.
 
 # 7. Cuts
 
-Phase 1 implements the banking fixture, surface contracts, Playwright adapter, session ownership,
-target resolution, structural targeting, condition evaluation, runtime outcomes, policy,
-redaction, evidence recording, coordinator lifecycle, and development CLI.
+The current implementation completes the Phase 1 runtime foundation and Phase 2 discovery slice:
 
-The following remain intentionally deferred:
+- Fictional banking application and deterministic scenarios.
+- Browser surface abstraction and Playwright implementation.
+- Session ownership and lifecycle management.
+- Genuine LLM-driven discovery.
+- Typed model decisions and bounded validation retry.
+- System-authoritative risk classification.
+- Policy enforcement for every proposed action.
+- Ordered semantic target resolution.
+- Read extraction and discovery working memory.
+- Bounded stopping and repeated-state detection.
+- Runtime application-state handling.
+- Goal completion verification.
+- Structured discovery results.
+- Sanitized discovery trace, events, screenshots, and final evidence.
+- Deterministic fake-model unit and integration tests.
+- A genuine successful OpenAI discovery run.
 
-- LLM-driven observe-decide-act discovery.
-- Capability artifact schema and discovery-to-artifact compilation.
+The following are intentionally deferred:
+
+- Final capability artifact schema.
+- Discovery-to-artifact compiler.
 - Artifact approval, storage, loading, and parameter binding.
-- Deterministic replay and its full error classifier.
-- Bounded policy-checked recovery.
-- Intervention request and stuck-state classification.
-- Human operator UI and live control transport.
-- Final discovery/replay CLI commands and submission evidence.
+- Deterministic replay.
+- Replay checkpoints and recovery behavior.
+- Replay evidence and exceptional-state demonstration.
+- Full human operator UI.
+- Complete live human takeover and resume workflow.
+- Cross-tenant artifact specialization and drift management.
 
-Redis, Kafka, queues, microservices, Kubernetes, browser farms, and production multi-tenant
-infrastructure are excluded. The priority is a small, testable core with clear seams for the
-assignment's load-bearing capabilities.
+These are not documented as runnable features because they do not exist yet. The report will be finalized after the remaining artifact, replay, and handoff phases are implemented.
