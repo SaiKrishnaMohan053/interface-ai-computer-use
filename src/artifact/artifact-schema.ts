@@ -15,6 +15,13 @@ const identifierSchema = z
     'Identifier must begin with a letter and contain only letters, numbers, underscores, or hyphens',
   );
 
+const capabilityIdSchema = z
+  .string()
+  .trim()
+  .min(1, 'Capability ID must not be empty')
+  .max(200)
+  .regex(/^[a-z][a-z0-9_]*$/, 'Capability ID must use lowercase snake_case');
+
 const nameSchema = z.string().trim().min(1, 'Name must not be empty').max(200);
 
 const descriptionSchema = z.string().trim().min(1, 'Description must not be empty').max(4_000);
@@ -37,7 +44,7 @@ export const capabilityValueTypeSchema = z.enum([
 
 export const capabilityIdentitySchema = z
   .object({
-    id: identifierSchema,
+    id: capabilityIdSchema,
     name: nameSchema,
     version: capabilityVersionSchema,
     description: descriptionSchema,

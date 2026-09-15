@@ -17,6 +17,8 @@ export {
   parseCapabilityArtifact,
 } from './artifact-schema.js';
 
+export { PRIMARY_CAPABILITY_ID } from './capability-artifact.js';
+
 export type {
   CapabilityAction,
   CapabilityArtifact,

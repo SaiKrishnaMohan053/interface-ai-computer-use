@@ -248,4 +248,47 @@ describe('CapabilityArtifact schema', () => {
 
     expect(capabilityArtifactSchema.safeParse(artifact).success).toBe(false);
   });
+
+  it('accepts a generalized stable capability identity', () => {
+    const artifact = validArtifact();
+
+    expect(artifact.identity).toEqual({
+      id: 'lookup_savings_balance',
+      name: 'Lookup Savings Balance',
+      version: '1.0.0',
+      description: 'Looks up a member and returns the current Savings balance.',
+    });
+
+    expect(capabilityArtifactSchema.safeParse(artifact).success).toBe(true);
+  });
+
+  it('rejects non-snake-case capability IDs', () => {
+    const invalidIds = [
+      'LookupSavingsBalance',
+      'lookup-savings-balance',
+      'LOOKUP_SAVINGS_BALANCE',
+      'lookup Savings Balance',
+    ];
+
+    for (const id of invalidIds) {
+      const artifact = {
+        ...validArtifact(),
+        identity: {
+          ...validArtifact().identity,
+          id,
+        },
+      };
+
+      expect(capabilityArtifactSchema.safeParse(artifact).success).toBe(false);
+    }
+  });
+
+  it('does not use discovery-specific identity for the primary capability', () => {
+    const artifact = validArtifact();
+
+    expect(artifact.identity.id).toBe('lookup_savings_balance');
+    expect(artifact.identity.id).not.toContain('alex');
+    expect(artifact.identity.name).not.toContain('Alex Morgan');
+    expect(artifact.identity.description).not.toContain('Alex Morgan');
+  });
 });

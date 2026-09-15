@@ -41,3 +41,5 @@ export type CapabilityMetadata = z.infer<typeof capabilityMetadataSchema>;
 export type CapabilitySuccessCondition = z.infer<typeof capabilitySuccessConditionSchema>;
 
 export type CapabilityArtifact = z.infer<typeof capabilityArtifactSchema>;
+
+export const PRIMARY_CAPABILITY_ID = 'lookup_savings_balance' as const;
