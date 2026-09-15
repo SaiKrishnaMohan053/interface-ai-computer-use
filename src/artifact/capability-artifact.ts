@@ -1,9 +1,43 @@
-/**
- * Domain types for reusable capability artifacts.
- *
- * The complete CapabilityArtifact contract is introduced in Phase 3.3.
- * Runtime validation belongs in artifact-schema.ts.
- *
- * This module must remain surface-neutral and JSON-serializable.
- */
-export {};
+import type { z } from 'zod';
+
+import type {
+  capabilityActionSchema,
+  capabilityArtifactSchema,
+  capabilityCompatibilitySchema,
+  capabilityIdentitySchema,
+  capabilityInputSchema,
+  capabilityMetadataSchema,
+  capabilityOutputSchema,
+  capabilityProvenanceSchema,
+  capabilityRiskMetadataSchema,
+  capabilityStepSchema,
+  capabilitySuccessConditionSchema,
+  capabilityValueTypeSchema,
+  knownBusinessOutcomeSchema,
+} from './artifact-schema.js';
+
+export type CapabilityValueType = z.infer<typeof capabilityValueTypeSchema>;
+
+export type CapabilityIdentity = z.infer<typeof capabilityIdentitySchema>;
+
+export type CapabilityCompatibility = z.infer<typeof capabilityCompatibilitySchema>;
+
+export type CapabilityInput = z.infer<typeof capabilityInputSchema>;
+
+export type CapabilityOutput = z.infer<typeof capabilityOutputSchema>;
+
+export type CapabilityAction = z.infer<typeof capabilityActionSchema>;
+
+export type CapabilityStep = z.infer<typeof capabilityStepSchema>;
+
+export type KnownBusinessOutcome = z.infer<typeof knownBusinessOutcomeSchema>;
+
+export type CapabilityRiskMetadata = z.infer<typeof capabilityRiskMetadataSchema>;
+
+export type CapabilityProvenance = z.infer<typeof capabilityProvenanceSchema>;
+
+export type CapabilityMetadata = z.infer<typeof capabilityMetadataSchema>;
+
+export type CapabilitySuccessCondition = z.infer<typeof capabilitySuccessConditionSchema>;
+
+export type CapabilityArtifact = z.infer<typeof capabilityArtifactSchema>;
