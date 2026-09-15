@@ -35,7 +35,7 @@ import { parseDiscoveryRequest, resolveDiscoveryRunConfig } from './contracts.js
 import type { DiscoveryDecision } from './decision.js';
 import { createDiscoveryIntervention } from './escalation.js';
 import type { DiscoveryIntervention } from './escalation.js';
-import { createDiscoveryModelInput } from './model/index.js';
+import { createDiscoveryModelInput, DiscoveryModelRequestError } from './model/index.js';
 import type { DiscoveryDecisionModel, DiscoveryHistoryEntry } from './model/index.js';
 import {
   DEFAULT_DISCOVERY_MODEL_FORMAT_RETRIES,
@@ -557,6 +557,15 @@ export class DiscoveryEngine {
                 attempts: error.attempts,
                 issues: [...error.issues],
               },
+            });
+          }
+
+          if (error instanceof DiscoveryModelRequestError) {
+            return this.finishFailure(context, state, {
+              code: 'MODEL_REQUEST_FAILED',
+              message: error.message,
+              expected: 'a successful discovery model response',
+              observed: 'MODEL_REQUEST_FAILED',
             });
           }
 

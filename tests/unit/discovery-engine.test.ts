@@ -21,7 +21,7 @@ import type {
   TargetResolutionResult,
 } from '../../src/surface/index.js';
 import type { TargetStrategy } from '../../src/targeting/index.js';
-import { DiscoveryEngine } from '../../src/discovery/index.js';
+import { DiscoveryEngine, DiscoveryModelRequestError } from '../../src/discovery/index.js';
 import type {
   DiscoveryCoordinator,
   DiscoveryDecision,
@@ -264,6 +264,12 @@ class FakeModel implements DiscoveryDecisionModel {
     if (decision === undefined) {
       throw new Error('Fake model decision queue was exhausted');
     }
+
+    if (decision instanceof Error) {
+      return Promise.reject(decision);
+    }
+
+    return Promise.resolve(decision as DiscoveryDecision);
 
     return Promise.resolve(decision as DiscoveryDecision);
   }
@@ -923,6 +929,28 @@ describe('DiscoveryEngine', () => {
     expect(fixture.coordinator.events.map((event) => event.eventType)).toContain(
       'discovery.failed',
     );
+  });
+
+  it('maps a model provider failure to a typed runtime failure', async () => {
+    const fixture = engine([
+      new DiscoveryModelRequestError({
+        cause: new Error('provider unavailable'),
+      }),
+    ]);
+
+    await expect(fixture.discovery.run(request())).resolves.toMatchObject({
+      status: 'failure',
+      error: {
+        code: 'MODEL_REQUEST_FAILED',
+        message: 'OpenAI discovery decision request failed',
+        expected: 'a successful discovery model response',
+        observed: 'MODEL_REQUEST_FAILED',
+      },
+    });
+
+    expect(fixture.surface.performed).toHaveLength(0);
+
+    expect(fixture.coordinator.finishedStatuses).toEqual(['failure']);
   });
 
   it('waits for a slow application state before asking the model', async () => {

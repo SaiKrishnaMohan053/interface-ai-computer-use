@@ -26,9 +26,8 @@ export interface OpenAIDecisionTransportRequest {
 }
 
 /**
- * Narrow injection seam for deterministic tests.
- *
- * Credentials and OpenAI SDK response types are deliberately excluded.
+ * Narrow injection seam that excludes credentials
+ * and OpenAI SDK response types.
  */
 export type OpenAIDecisionTransport = (request: OpenAIDecisionTransportRequest) => Promise<unknown>;
 
@@ -36,6 +35,22 @@ export class DiscoveryModelResponseError extends Error {
   constructor(message: string, options?: ErrorOptions) {
     super(message, options);
     this.name = 'DiscoveryModelResponseError';
+  }
+}
+
+/**
+ * Represents an OpenAI/provider request failure.
+ *
+ * The public message intentionally excludes provider error text,
+ * request payloads, and credentials.
+ */
+export class DiscoveryModelRequestError extends Error {
+  readonly code = 'MODEL_REQUEST_FAILED' as const;
+
+  constructor(options?: ErrorOptions) {
+    super('OpenAI discovery decision request failed', options);
+
+    this.name = 'DiscoveryModelRequestError';
   }
 }
 
@@ -103,18 +118,40 @@ export class OpenAIDiscoveryDecisionModel implements DiscoveryDecisionModel {
 
   constructor(config: OpenAIDiscoveryModelConfig, transport?: OpenAIDecisionTransport) {
     this.config = validateOpenAIDiscoveryModelConfig(config);
+
     this.transport = transport ?? createDefaultTransport(this.config);
   }
 
   async decide(input: DiscoveryModelInput): Promise<DiscoveryDecision> {
     const modelContext = buildDiscoveryModelContext(input);
 
-    const rawResponse = await this.transport({
-      model: this.config.model,
-      systemPrompt: DISCOVERY_SYSTEM_PROMPT,
-      decisionContract: decisionJsonSchema,
-      modelInputJson: JSON.stringify(modelContext),
-    });
+    let rawResponse: unknown;
+
+    try {
+      rawResponse = await this.transport({
+        model: this.config.model,
+        systemPrompt: DISCOVERY_SYSTEM_PROMPT,
+        decisionContract: decisionJsonSchema,
+        modelInputJson: JSON.stringify(modelContext),
+      });
+    } catch (error) {
+      /*
+       * Response-format failures remain response errors
+       * so the bounded structured-output retry can handle them.
+       */
+      if (error instanceof DiscoveryModelResponseError) {
+        throw error;
+      }
+
+      /*
+       * Provider/API errors receive a stable public error.
+       * Do not copy the provider message because it may
+       * contain credentials or sensitive request details.
+       */
+      throw new DiscoveryModelRequestError({
+        cause: error,
+      });
+    }
 
     try {
       return parseDiscoveryDecision(rawResponse);

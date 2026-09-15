@@ -30,6 +30,7 @@ export type {
 } from './model-config.js';
 
 export {
+  DiscoveryModelRequestError,
   DiscoveryModelResponseError,
   OpenAIDiscoveryDecisionModel,
   createOpenAIDiscoveryDecisionModelFromEnvironment,
