@@ -1,5 +1,5 @@
 import { once } from 'node:events';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import type { Server } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -244,6 +244,54 @@ describe('DiscoveryEngine with a deterministic scripted model', () => {
       expect(model.remaining).toBe(0);
 
       expect(model.inputs.map((input) => input.observation.step)).toEqual([1, 2, 3, 4, 5]);
+
+      expect(result.runId).toEqual(expect.any(String));
+
+      expect(result.sessionId).toEqual(expect.any(String));
+
+      const eventLines = (await readFile(join(evidenceRoot, result.runId, 'events.jsonl'), 'utf8'))
+        .trim()
+        .split(/\r?\n/)
+        .map(
+          (line) =>
+            JSON.parse(line) as {
+              readonly eventType: string;
+            },
+        );
+
+      const eventTypes = eventLines.map((event) => event.eventType);
+
+      expect(eventTypes).toEqual(
+        expect.arrayContaining([
+          'run_started',
+          'discovery.started',
+          'observation.captured',
+          'model.decision.received',
+          'policy.evaluated',
+          'target.resolved',
+          'action.completed',
+          'value.extracted',
+          'discovery.completed',
+          'run_finished',
+        ]),
+      );
+
+      /*
+       * type, Search click, Accounts click,
+       * read, and complete.
+       */
+      expect(
+        eventTypes.filter((eventType) => eventType === 'model.decision.received'),
+      ).toHaveLength(5);
+
+      /*
+       * type, Search click, Accounts click,
+       * and Savings balance read all require
+       * target resolution.
+       */
+      expect(eventTypes.filter((eventType) => eventType === 'target.resolved')).toHaveLength(4);
+
+      expect(eventTypes.filter((eventType) => eventType === 'value.extracted')).toHaveLength(1);
     } finally {
       await closeServer(server);
 
