@@ -8,14 +8,16 @@ import { describe, expect, it } from 'vitest';
 
 import { createDemoServer } from '../../demo-app/server.js';
 import { DiscoveryEngine } from '../../src/discovery/index.js';
-import type { DiscoveryDecision } from '../../src/discovery/index.js';
 import { POLICY_ACTION_KINDS, PolicyEngine } from '../../src/policy/index.js';
 import type { PolicyActionKind, RiskLevel } from '../../src/policy/index.js';
 import { RunCoordinator } from '../../src/runtime/index.js';
 import { PlaywrightSurface } from '../../src/surface/playwright/index.js';
 import type { PlaywrightStrategy } from '../../src/surface/playwright/index.js';
 
-import { ScriptedDiscoveryDecisionModel } from '../helpers/scripted-discovery-model.js';
+import {
+  ScriptedDiscoveryDecisionModel,
+  createSavingsBalanceDiscoveryScript,
+} from '../helpers/scripted-discovery-model.js';
 
 function riskFor(action: PolicyActionKind): RiskLevel {
   return action === 'navigate' || action === 'read' || action === 'wait'
@@ -78,102 +80,6 @@ async function closeServer(server: Server): Promise<void> {
   await closed;
 }
 
-const textMatch = (value: string) => ({
-  value,
-  mode: 'exact' as const,
-  caseSensitive: false,
-});
-
-function scriptedDecisions(): readonly DiscoveryDecision[] {
-  return [
-    {
-      kind: 'type',
-      target: {
-        description: 'Member name input',
-        strategies: [
-          {
-            kind: 'label',
-            label: textMatch('Member Name'),
-          },
-        ],
-        cardinality: 'exactly-one',
-      },
-      text: 'Alex Morgan',
-      mode: 'replace',
-      reason: 'Enter the member name from the test goal',
-    },
-
-    {
-      kind: 'click',
-      target: {
-        description: 'Member search button',
-        strategies: [
-          {
-            kind: 'role-name',
-            role: 'button',
-            name: textMatch('Search'),
-          },
-        ],
-        cardinality: 'exactly-one',
-      },
-      reason: 'Run the member lookup',
-    },
-
-    {
-      kind: 'click',
-      target: {
-        description: 'Accounts link',
-        strategies: [
-          {
-            kind: 'role-name',
-            role: 'link',
-            name: textMatch('Accounts'),
-          },
-        ],
-        cardinality: 'exactly-one',
-      },
-      reason: 'Open the observed accounts page',
-    },
-
-    {
-      kind: 'read',
-      target: {
-        description: 'Savings current balance',
-        strategies: [
-          {
-            kind: 'structural',
-            query: {
-              kind: 'table-cell',
-              table: {
-                name: textMatch('Accounts'),
-              },
-              row: {
-                columnHeader: textMatch('Account Type'),
-                value: textMatch('Savings'),
-              },
-              column: {
-                header: textMatch('Current Balance'),
-              },
-            },
-          },
-        ],
-        cardinality: 'exactly-one',
-      },
-      source: 'text',
-      saveAs: 'savingsBalance',
-      reason: 'Read the Savings row current balance',
-    },
-
-    {
-      kind: 'complete',
-      summary: 'Savings balance was read from the observed Accounts table',
-      outputs: {
-        savingsBalance: '$12,840.50',
-      },
-    },
-  ];
-}
-
 describe('DiscoveryEngine with a deterministic scripted model', () => {
   it('completes the real demo lookup without an OpenAI call', async () => {
     const evidenceRoot = await mkdtemp(join(tmpdir(), 'scripted-discovery-'));
@@ -193,7 +99,7 @@ describe('DiscoveryEngine with a deterministic scripted model', () => {
 
     const target = `http://127.0.0.1:${address.port}` + '/member-search';
 
-    const model = new ScriptedDiscoveryDecisionModel(scriptedDecisions());
+    const model = new ScriptedDiscoveryDecisionModel(createSavingsBalanceDiscoveryScript());
 
     try {
       const coordinator = new RunCoordinator<PlaywrightStrategy>({

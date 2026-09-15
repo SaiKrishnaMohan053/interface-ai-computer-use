@@ -52,3 +52,154 @@ export class ScriptedDiscoveryDecisionModel implements DiscoveryDecisionModel {
     return Promise.resolve(decision);
   }
 }
+
+const textMatch = (value: string) => ({
+  value,
+  mode: 'exact' as const,
+  caseSensitive: false,
+});
+
+/**
+ * Assignment demo script.
+ * Hard-coded workflow knowledge is test-only.
+ */
+export function createSavingsBalanceDiscoveryScript(): readonly DiscoveryDecision[] {
+  return [
+    {
+      kind: 'type',
+
+      target: {
+        description: 'Member name input',
+
+        strategies: [
+          {
+            kind: 'label',
+            label: textMatch('Member Name'),
+          },
+        ],
+
+        cardinality: 'exactly-one',
+      },
+
+      text: 'Alex Morgan',
+      mode: 'replace',
+
+      reason: 'Enter the member name from the test goal',
+    },
+
+    {
+      kind: 'click',
+
+      target: {
+        description: 'Member search button',
+
+        strategies: [
+          {
+            kind: 'role-name',
+            role: 'button',
+            name: textMatch('Search'),
+          },
+        ],
+
+        cardinality: 'exactly-one',
+      },
+
+      reason: 'Run the member lookup',
+    },
+
+    {
+      kind: 'click',
+
+      target: {
+        description: 'Accounts link',
+
+        strategies: [
+          {
+            kind: 'role-name',
+            role: 'link',
+            name: textMatch('Accounts'),
+          },
+        ],
+
+        cardinality: 'exactly-one',
+      },
+
+      reason: 'Open the observed accounts page',
+    },
+
+    {
+      kind: 'read',
+
+      target: {
+        description: 'Savings current balance',
+
+        strategies: [
+          {
+            kind: 'structural',
+
+            query: {
+              kind: 'table-cell',
+
+              table: {
+                name: textMatch('Accounts'),
+              },
+
+              row: {
+                columnHeader: textMatch('Account Type'),
+
+                value: textMatch('Savings'),
+              },
+
+              column: {
+                header: textMatch('Current Balance'),
+              },
+            },
+          },
+        ],
+
+        cardinality: 'exactly-one',
+      },
+
+      source: 'text',
+      saveAs: 'savingsBalance',
+
+      reason: 'Read the Savings row current balance',
+    },
+
+    {
+      kind: 'complete',
+
+      summary: 'Savings balance was read from the observed Accounts table',
+
+      outputs: {
+        savingsBalance: '$12,840.50',
+      },
+    },
+  ];
+}
+
+export function createKnownDialogSavingsBalanceScript(): readonly DiscoveryDecision[] {
+  return [
+    {
+      kind: 'click',
+
+      target: {
+        description: 'Known service notice Continue link',
+
+        strategies: [
+          {
+            kind: 'role-name',
+            role: 'link',
+            name: textMatch('Continue'),
+          },
+        ],
+
+        cardinality: 'exactly-one',
+      },
+
+      reason: 'Continue through the known safe demonstration notice',
+    },
+
+    ...createSavingsBalanceDiscoveryScript(),
+  ];
+}
