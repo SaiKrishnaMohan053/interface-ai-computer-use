@@ -67,6 +67,20 @@ const compatibilityValueSchema = z
   .min(1, 'Compatibility value must not be empty')
   .max(200);
 
+export const CAPABILITY_ACTION_KINDS = [
+  'click',
+  'type',
+  'select',
+  'check',
+  'uncheck',
+  'navigate',
+  'read',
+  'wait',
+  'dismiss',
+] as const;
+
+export const capabilityActionKindSchema = z.enum(CAPABILITY_ACTION_KINDS);
+
 export const capabilityValueTypeSchema = z.enum([
   'string',
   'number',
@@ -127,50 +141,94 @@ export const capabilityOutputSchema = z
   })
   .strict();
 
-/**
- * Phase 3.3 intentionally establishes only the persisted action-kind shell.
- *
- * Typed value bindings, read output bindings, and other action-specific
- * payloads are introduced by the dedicated binding/action-schema steps.
- */
-const simpleCapabilityActionSchema = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('click') }).strict(),
-  z.object({ kind: z.literal('check') }).strict(),
-  z.object({ kind: z.literal('uncheck') }).strict(),
-  z.object({ kind: z.literal('navigate') }).strict(),
-  z.object({ kind: z.literal('wait') }).strict(),
-  z.object({ kind: z.literal('dismiss') }).strict(),
-]);
-
-const readCapabilityActionSchema = z
+const clickCapabilityActionSchema = z
   .object({
-    kind: z.literal('read'),
-    saveAs: capabilityOutputBindingSchema,
+    kind: z.literal('click'),
   })
   .strict();
 
-const typedInputActionSchema = z
+const typeCapabilityActionSchema = z
   .object({
     kind: z.literal('type'),
-
     value: capabilityInputBindingSchema,
-
     mode: z.enum(['replace', 'append']),
   })
   .strict();
 
-/**
- * Phase 3.6 introduces input-bound typing.
- *
- * Literal invocation values are intentionally not part of the persisted
- * type action contract. The action points to a declared artifact input.
- *
- * Select bindings are introduced when their value semantics are defined.
- */
-export const capabilityActionSchema = z.union([
-  typedInputActionSchema,
-  simpleCapabilityActionSchema,
+export const capabilitySelectOptionSchema = z.discriminatedUnion('kind', [
+  z
+    .object({
+      kind: z.literal('label'),
+      label: capabilityInputBindingSchema,
+    })
+    .strict(),
+
+  z
+    .object({
+      kind: z.literal('value'),
+      value: capabilityInputBindingSchema,
+    })
+    .strict(),
+]);
+
+const selectCapabilityActionSchema = z
+  .object({
+    kind: z.literal('select'),
+    option: capabilitySelectOptionSchema,
+  })
+  .strict();
+
+const checkCapabilityActionSchema = z
+  .object({
+    kind: z.literal('check'),
+  })
+  .strict();
+
+const uncheckCapabilityActionSchema = z
+  .object({
+    kind: z.literal('uncheck'),
+  })
+  .strict();
+
+const navigateCapabilityActionSchema = z
+  .object({
+    kind: z.literal('navigate'),
+    destination: z.string().trim().min(1).max(2_000),
+  })
+  .strict();
+
+const readCapabilityActionSchema = z
+  .object({
+    kind: z.literal('read'),
+    source: z.enum(['text', 'value']),
+    saveAs: capabilityOutputBindingSchema,
+  })
+  .strict();
+
+const waitCapabilityActionSchema = z
+  .object({
+    kind: z.literal('wait'),
+    condition: conditionSpecSchema,
+  })
+  .strict();
+
+const dismissCapabilityActionSchema = z
+  .object({
+    kind: z.literal('dismiss'),
+    response: z.enum(['dismiss', 'accept']),
+  })
+  .strict();
+
+export const capabilityActionSchema = z.discriminatedUnion('kind', [
+  clickCapabilityActionSchema,
+  typeCapabilityActionSchema,
+  selectCapabilityActionSchema,
+  checkCapabilityActionSchema,
+  uncheckCapabilityActionSchema,
+  navigateCapabilityActionSchema,
   readCapabilityActionSchema,
+  waitCapabilityActionSchema,
+  dismissCapabilityActionSchema,
 ]);
 
 export const capabilityStepSchema = z

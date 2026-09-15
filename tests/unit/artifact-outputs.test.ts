@@ -39,6 +39,7 @@ describe('artifact typed outputs', () => {
     expect(
       capabilityActionSchema.parse({
         kind: 'read',
+        source: 'text',
         saveAs: {
           kind: 'outputRef',
           name: 'savingsBalance',
@@ -46,6 +47,7 @@ describe('artifact typed outputs', () => {
       }),
     ).toEqual({
       kind: 'read',
+      source: 'text',
       saveAs: {
         kind: 'outputRef',
         name: 'savingsBalance',
@@ -57,6 +59,7 @@ describe('artifact typed outputs', () => {
     expect(
       capabilityActionSchema.safeParse({
         kind: 'read',
+        source: 'text',
         saveAs: 'savingsBalance',
       }).success,
     ).toBe(false);
@@ -66,6 +69,7 @@ describe('artifact typed outputs', () => {
     expect(
       capabilityActionSchema.safeParse({
         kind: 'read',
+        source: 'text',
         saveAs: 'alexMorganSavingsBalance',
       }).success,
     ).toBe(false);
@@ -75,6 +79,7 @@ describe('artifact typed outputs', () => {
     expect(
       capabilityActionSchema.safeParse({
         kind: 'read',
+        source: 'text',
         saveAs: {
           kind: 'outputRef',
           name: 'savingsBalance',

@@ -19,6 +19,8 @@ import type {
   capabilitySuccessConditionSchema,
   capabilityValueTypeSchema,
   knownBusinessOutcomeSchema,
+  capabilitySelectOptionSchema,
+  capabilityActionKindSchema,
 } from './artifact-schema.js';
 
 export type CapabilityValueType = z.infer<typeof capabilityValueTypeSchema>;
@@ -58,3 +60,7 @@ export type CapabilitySuccessCondition = z.infer<typeof capabilitySuccessConditi
 export type CapabilityArtifact = z.infer<typeof capabilityArtifactSchema>;
 
 export const PRIMARY_CAPABILITY_ID = 'lookup_savings_balance' as const;
+
+export type CapabilityActionKind = z.infer<typeof capabilityActionKindSchema>;
+
+export type CapabilitySelectOption = z.infer<typeof capabilitySelectOptionSchema>;

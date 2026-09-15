@@ -141,6 +141,7 @@ function validArtifact(): CapabilityArtifact {
         description: 'Read the current balance of the Savings account.',
         action: {
           kind: 'read',
+          source: 'text',
           saveAs: {
             kind: 'outputRef',
             name: 'savingsBalance',
@@ -247,6 +248,7 @@ describe('CapabilityArtifact schema', () => {
 
     expect(readStep?.action).toEqual({
       kind: 'read',
+      source: 'text',
       saveAs: {
         kind: 'outputRef',
         name: 'savingsBalance',

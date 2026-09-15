@@ -20,6 +20,9 @@ export {
   capabilityValueTypeSchema,
   knownBusinessOutcomeSchema,
   parseCapabilityArtifact,
+  CAPABILITY_ACTION_KINDS,
+  capabilityActionKindSchema,
+  capabilitySelectOptionSchema,
 } from './artifact-schema.js';
 
 export { PRIMARY_CAPABILITY_ID } from './capability-artifact.js';
