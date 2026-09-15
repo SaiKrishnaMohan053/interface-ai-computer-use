@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   capabilityActionSchema,
-  capabilityInputReferenceSchema,
+  capabilityInputBindingSchema,
   capabilityInputSchema,
   capabilityValueTypeSchema,
 } from '../../src/artifact/index.js';
@@ -36,35 +36,39 @@ describe('artifact typed inputs', () => {
     });
   });
 
-  it('accepts an explicit input reference', () => {
+  it('accepts an explicit typed input binding', () => {
     expect(
-      capabilityInputReferenceSchema.parse({
-        inputRef: 'memberName',
+      capabilityInputBindingSchema.parse({
+        kind: 'inputRef',
+        name: 'memberName',
       }),
     ).toEqual({
-      inputRef: 'memberName',
+      kind: 'inputRef',
+      name: 'memberName',
     });
   });
 
-  it('requires type actions to reference an artifact input', () => {
+  it('requires type actions to use the typed input binding model', () => {
     expect(
       capabilityActionSchema.parse({
         kind: 'type',
         value: {
-          inputRef: 'memberName',
+          kind: 'inputRef',
+          name: 'memberName',
         },
         mode: 'replace',
       }),
     ).toEqual({
       kind: 'type',
       value: {
-        inputRef: 'memberName',
+        kind: 'inputRef',
+        name: 'memberName',
       },
       mode: 'replace',
     });
   });
 
-  it('rejects a literal discovered member name as a type action value', () => {
+  it('rejects literal discovered values', () => {
     expect(
       capabilityActionSchema.safeParse({
         kind: 'type',
@@ -74,21 +78,56 @@ describe('artifact typed inputs', () => {
     ).toBe(false);
   });
 
-  it('rejects discovery-style text fields on persisted type actions', () => {
+  it('rejects string-template bindings', () => {
     expect(
       capabilityActionSchema.safeParse({
         kind: 'type',
-        text: 'Alex Morgan',
+        value: '{{memberName}}',
         mode: 'replace',
       }).success,
     ).toBe(false);
   });
 
-  it('rejects undeclared extra fields on input references', () => {
+  it('rejects the previous untyped inputRef shape', () => {
     expect(
-      capabilityInputReferenceSchema.safeParse({
-        inputRef: 'memberName',
+      capabilityActionSchema.safeParse({
+        kind: 'type',
+        value: {
+          inputRef: 'memberName',
+        },
+        mode: 'replace',
+      }).success,
+    ).toBe(false);
+  });
+
+  it('rejects malformed input bindings', () => {
+    expect(
+      capabilityInputBindingSchema.safeParse({
+        kind: 'inputRef',
+      }).success,
+    ).toBe(false);
+
+    expect(
+      capabilityInputBindingSchema.safeParse({
+        kind: 'inputRef',
+        name: 'memberName',
         fallback: 'Alex Morgan',
+      }).success,
+    ).toBe(false);
+  });
+
+  it('rejects unsupported binding kinds', () => {
+    expect(
+      capabilityInputBindingSchema.safeParse({
+        kind: 'template',
+        name: 'memberName',
+      }).success,
+    ).toBe(false);
+
+    expect(
+      capabilityInputBindingSchema.safeParse({
+        kind: 'literal',
+        value: 'Alex Morgan',
       }).success,
     ).toBe(false);
   });

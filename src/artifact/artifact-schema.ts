@@ -71,9 +71,10 @@ export const capabilityInputSchema = z
   })
   .strict();
 
-export const capabilityInputReferenceSchema = z
+export const capabilityInputBindingSchema = z
   .object({
-    inputRef: identifierSchema,
+    kind: z.literal('inputRef'),
+    name: identifierSchema,
   })
   .strict();
 
@@ -106,7 +107,7 @@ const typedInputActionSchema = z
   .object({
     kind: z.literal('type'),
 
-    value: capabilityInputReferenceSchema,
+    value: capabilityInputBindingSchema,
 
     mode: z.enum(['replace', 'append']),
   })

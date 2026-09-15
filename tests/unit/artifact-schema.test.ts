@@ -59,7 +59,8 @@ function validArtifact(): CapabilityArtifact {
         action: {
           kind: 'type',
           value: {
-            inputRef: 'memberName',
+            kind: 'inputRef',
+            name: 'memberName',
           },
           mode: 'replace',
         },
@@ -154,7 +155,8 @@ describe('CapabilityArtifact schema', () => {
     expect(typeStep?.action).toEqual({
       kind: 'type',
       value: {
-        inputRef: 'memberName',
+        kind: 'inputRef',
+        name: 'memberName',
       },
       mode: 'replace',
     });
