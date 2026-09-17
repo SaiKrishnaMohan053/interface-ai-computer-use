@@ -120,12 +120,20 @@ function validArtifact(): CapabilityArtifact {
           kind: 'click',
         },
         target: {
-          description: 'Accounts navigation link',
+          description: 'Accounts navigation',
           strategies: [
             {
               kind: 'role-name',
               role: 'link',
               name: {
+                value: 'Accounts',
+                mode: 'exact',
+                caseSensitive: false,
+              },
+            },
+            {
+              kind: 'text',
+              text: {
                 value: 'Accounts',
                 mode: 'exact',
                 caseSensitive: false,
@@ -228,6 +236,81 @@ function validArtifact(): CapabilityArtifact {
 }
 
 describe('CapabilityArtifact schema', () => {
+  it('persists semantic targets rather than resolved runtime targets', () => {
+    const artifact = validArtifact();
+
+    const openAccountsStep = artifact.steps.find((step) => step.id === 'open-accounts');
+
+    expect(openAccountsStep?.target).toEqual({
+      description: 'Accounts navigation',
+      strategies: [
+        {
+          kind: 'role-name',
+          role: 'link',
+          name: {
+            value: 'Accounts',
+            mode: 'exact',
+            caseSensitive: false,
+          },
+        },
+        {
+          kind: 'text',
+          text: {
+            value: 'Accounts',
+            mode: 'exact',
+            caseSensitive: false,
+          },
+        },
+      ],
+      cardinality: 'exactly-one',
+    });
+
+    const serialized = JSON.stringify(artifact);
+
+    expect(serialized).not.toContain('resolutionId');
+    expect(serialized).not.toContain('observationId');
+    expect(serialized).not.toContain('matchedStrategyIndex');
+  });
+
+  it('persists the Savings balance as a structural target', () => {
+    const artifact = validArtifact();
+
+    const readStep = artifact.steps.find((step) => step.id === 'read-savings-balance');
+
+    expect(readStep?.target?.strategies[0]).toEqual({
+      kind: 'structural',
+      query: {
+        kind: 'table-cell',
+        table: {
+          name: {
+            value: 'Accounts',
+            mode: 'contains',
+            caseSensitive: false,
+          },
+        },
+        row: {
+          columnHeader: {
+            value: 'Account Type',
+            mode: 'exact',
+            caseSensitive: false,
+          },
+          value: {
+            value: 'Savings',
+            mode: 'exact',
+            caseSensitive: false,
+          },
+        },
+        column: {
+          header: {
+            value: 'Current Balance',
+            mode: 'exact',
+            caseSensitive: false,
+          },
+        },
+      },
+    });
+  });
+
   it('uses stable ordered step IDs for the reusable capability', () => {
     const artifact = validArtifact();
 
