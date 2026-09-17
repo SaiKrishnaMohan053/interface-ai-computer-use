@@ -356,6 +356,31 @@ function validArtifact(): CapabilityArtifact {
 }
 
 describe('CapabilityArtifact schema', () => {
+  it('declares only capability-specific known business outcomes', () => {
+    const artifact = validArtifact();
+
+    expect(artifact.knownBusinessOutcomes).toEqual([
+      {
+        code: 'MEMBER_NOT_FOUND',
+        description: 'No member matched the supplied lookup input.',
+        detector: {
+          kind: 'textPresent',
+          text: 'Member not found',
+          match: 'contains',
+          caseSensitive: false,
+        },
+      },
+    ]);
+
+    const codes = artifact.knownBusinessOutcomes?.map((outcome) => outcome.code) ?? [];
+
+    expect(codes).toContain('MEMBER_NOT_FOUND');
+
+    expect(codes).not.toContain('PERMISSION_DENIED');
+    expect(codes).not.toContain('SESSION_EXPIRED');
+    expect(codes).not.toContain('APPLICATION_ERROR');
+  });
+
   it('requires final success to prove Savings context and extracted output', () => {
     const artifact = validArtifact();
 
