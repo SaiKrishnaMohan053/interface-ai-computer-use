@@ -60,3 +60,5 @@ export {
 } from './artifact-version.js';
 
 export type { ParsedCapabilityVersion, ParsedSchemaVersion } from './artifact-version.js';
+
+export { normalizeArtifactTargetSpec } from './artifact-normalizer.js';
