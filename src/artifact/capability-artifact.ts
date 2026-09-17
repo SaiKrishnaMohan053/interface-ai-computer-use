@@ -23,6 +23,10 @@ import type {
   artifactOutputPresentSuccessConditionSchema,
   artifactSuccessConditionSchema,
   artifactSurfaceSuccessConditionSchema,
+  artifactAllSuccessConditionSchema,
+  artifactAnySuccessConditionSchema,
+  artifactNotSuccessConditionSchema,
+  artifactSuccessLeafSchema,
 } from './artifact-schema.js';
 
 export type CapabilityValueType = z.infer<typeof capabilityValueTypeSchema>;
@@ -72,3 +76,11 @@ export type ArtifactOutputPresentSuccessCondition = z.infer<
 >;
 
 export type ArtifactSuccessCondition = z.infer<typeof artifactSuccessConditionSchema>;
+
+export type ArtifactSuccessLeaf = z.infer<typeof artifactSuccessLeafSchema>;
+
+export type ArtifactAllSuccessCondition = z.infer<typeof artifactAllSuccessConditionSchema>;
+
+export type ArtifactAnySuccessCondition = z.infer<typeof artifactAnySuccessConditionSchema>;
+
+export type ArtifactNotSuccessCondition = z.infer<typeof artifactNotSuccessConditionSchema>;

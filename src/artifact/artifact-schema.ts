@@ -303,20 +303,37 @@ export const artifactOutputPresentSuccessConditionSchema = z
   })
   .strict();
 
-const artifactSuccessLeafSchema = z.union([
+export const artifactSuccessLeafSchema = z.union([
   artifactSurfaceSuccessConditionSchema,
   artifactOutputPresentSuccessConditionSchema,
 ]);
 
+export const artifactAllSuccessConditionSchema = z
+  .object({
+    kind: z.literal('all'),
+    conditions: z.array(artifactSuccessLeafSchema).min(2).max(10),
+  })
+  .strict();
+
+export const artifactAnySuccessConditionSchema = z
+  .object({
+    kind: z.literal('any'),
+    conditions: z.array(artifactSuccessLeafSchema).min(2).max(10),
+  })
+  .strict();
+
+export const artifactNotSuccessConditionSchema = z
+  .object({
+    kind: z.literal('not'),
+    condition: artifactSuccessLeafSchema,
+  })
+  .strict();
+
 export const artifactSuccessConditionSchema = z.union([
   artifactSuccessLeafSchema,
-
-  z
-    .object({
-      kind: z.literal('allOf'),
-      conditions: z.array(artifactSuccessLeafSchema).min(2).max(10),
-    })
-    .strict(),
+  artifactAllSuccessConditionSchema,
+  artifactAnySuccessConditionSchema,
+  artifactNotSuccessConditionSchema,
 ]);
 
 /**

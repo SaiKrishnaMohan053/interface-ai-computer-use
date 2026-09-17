@@ -281,7 +281,7 @@ function validArtifact(): CapabilityArtifact {
     ],
 
     successCondition: {
-      kind: 'allOf',
+      kind: 'all',
       conditions: [
         {
           kind: 'surface',
@@ -360,7 +360,7 @@ describe('CapabilityArtifact schema', () => {
     const artifact = validArtifact();
 
     expect(artifact.successCondition).toEqual({
-      kind: 'allOf',
+      kind: 'all',
       conditions: [
         {
           kind: 'surface',

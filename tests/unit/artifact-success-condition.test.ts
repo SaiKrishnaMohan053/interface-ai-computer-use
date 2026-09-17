@@ -44,7 +44,7 @@ const savingsBalanceTarget = {
 describe('artifact final success condition', () => {
   it('combines Savings context with required output presence', () => {
     const condition = artifactSuccessConditionSchema.parse({
-      kind: 'allOf',
+      kind: 'all',
       conditions: [
         {
           kind: 'surface',
@@ -63,7 +63,7 @@ describe('artifact final success condition', () => {
       ],
     });
 
-    expect(condition.kind).toBe('allOf');
+    expect(condition.kind).toBe('all');
   });
 
   it('reuses existing SurfaceCondition semantics', () => {
@@ -89,10 +89,10 @@ describe('artifact final success condition', () => {
     ).toBe(true);
   });
 
-  it('requires at least two conditions for allOf', () => {
+  it('requires at least two conditions for all', () => {
     expect(
       artifactSuccessConditionSchema.safeParse({
-        kind: 'allOf',
+        kind: 'all',
         conditions: [
           {
             kind: 'outputPresent',
@@ -117,10 +117,10 @@ describe('artifact final success condition', () => {
   it('does not allow arbitrary nested boolean condition trees', () => {
     expect(
       artifactSuccessConditionSchema.safeParse({
-        kind: 'allOf',
+        kind: 'all',
         conditions: [
           {
-            kind: 'allOf',
+            kind: 'all',
             conditions: [
               {
                 kind: 'outputPresent',
@@ -145,6 +145,128 @@ describe('artifact final success condition', () => {
             },
           },
         ],
+      }).success,
+    ).toBe(false);
+  });
+
+  it('does not allow nested composite condition trees', () => {
+    expect(
+      artifactSuccessConditionSchema.safeParse({
+        kind: 'all',
+        conditions: [
+          {
+            kind: 'any',
+            conditions: [
+              {
+                kind: 'surface',
+                condition: {
+                  kind: 'loadingComplete',
+                },
+              },
+              {
+                kind: 'outputPresent',
+                output: {
+                  kind: 'outputRef',
+                  name: 'savingsBalance',
+                },
+              },
+            ],
+          },
+          {
+            kind: 'outputPresent',
+            output: {
+              kind: 'outputRef',
+              name: 'savingsBalance',
+            },
+          },
+        ],
+      }).success,
+    ).toBe(false);
+  });
+
+  it('supports a bounded any composite over leaf conditions', () => {
+    expect(
+      artifactSuccessConditionSchema.safeParse({
+        kind: 'any',
+        conditions: [
+          {
+            kind: 'surface',
+            condition: {
+              kind: 'textPresent',
+              text: 'Member Details',
+              match: 'contains',
+              caseSensitive: false,
+            },
+          },
+          {
+            kind: 'surface',
+            condition: {
+              kind: 'textPresent',
+              text: 'Member not found',
+              match: 'contains',
+              caseSensitive: false,
+            },
+          },
+        ],
+      }).success,
+    ).toBe(true);
+  });
+
+  it('supports negation of one leaf condition', () => {
+    expect(
+      artifactSuccessConditionSchema.safeParse({
+        kind: 'not',
+        condition: {
+          kind: 'surface',
+          condition: {
+            kind: 'textPresent',
+            text: 'Application Error',
+            match: 'contains',
+            caseSensitive: false,
+          },
+        },
+      }).success,
+    ).toBe(true);
+  });
+
+  it('requires at least two leaf conditions for any', () => {
+    expect(
+      artifactSuccessConditionSchema.safeParse({
+        kind: 'any',
+        conditions: [
+          {
+            kind: 'surface',
+            condition: {
+              kind: 'loadingComplete',
+            },
+          },
+        ],
+      }).success,
+    ).toBe(false);
+  });
+
+  it('rejects composite conditions inside not', () => {
+    expect(
+      artifactSuccessConditionSchema.safeParse({
+        kind: 'not',
+        condition: {
+          kind: 'all',
+          conditions: [
+            {
+              kind: 'surface',
+              condition: {
+                kind: 'loadingComplete',
+              },
+            },
+            {
+              kind: 'outputPresent',
+              output: {
+                kind: 'outputRef',
+                name: 'savingsBalance',
+              },
+            },
+          ],
+        },
       }).success,
     ).toBe(false);
   });
