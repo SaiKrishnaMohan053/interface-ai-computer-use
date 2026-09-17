@@ -79,6 +79,26 @@ function validArtifact(): CapabilityArtifact {
           ],
           cardinality: 'exactly-one',
         },
+        preconditions: [
+          {
+            kind: 'elementVisible',
+            target: {
+              description: 'Member Name input',
+              strategies: [
+                {
+                  kind: 'role-name',
+                  role: 'textbox',
+                  name: {
+                    value: 'Member Name',
+                    mode: 'exact',
+                    caseSensitive: false,
+                  },
+                },
+              ],
+              cardinality: 'exactly-one',
+            },
+          },
+        ],
         risk: 'REVERSIBLE',
       },
       {
@@ -105,6 +125,12 @@ function validArtifact(): CapabilityArtifact {
         postconditions: [
           {
             kind: 'loadingComplete',
+          },
+          {
+            kind: 'textPresent',
+            text: 'Member Details',
+            match: 'contains',
+            caseSensitive: false,
           },
         ],
         wait: {
@@ -141,6 +167,30 @@ function validArtifact(): CapabilityArtifact {
             },
           ],
           cardinality: 'exactly-one',
+        },
+        postconditions: [
+          {
+            kind: 'elementVisible',
+            target: {
+              description: 'Accounts table',
+              strategies: [
+                {
+                  kind: 'role-name',
+                  role: 'table',
+                  name: {
+                    value: 'Accounts',
+                    mode: 'contains',
+                    caseSensitive: false,
+                  },
+                },
+              ],
+              cardinality: 'exactly-one',
+            },
+          },
+        ],
+        wait: {
+          timeoutMs: 5_000,
+          pollIntervalMs: 100,
         },
         risk: 'READ_ONLY',
       },
@@ -193,6 +243,26 @@ function validArtifact(): CapabilityArtifact {
           ],
           cardinality: 'exactly-one',
         },
+        preconditions: [
+          {
+            kind: 'elementVisible',
+            target: {
+              description: 'Accounts table',
+              strategies: [
+                {
+                  kind: 'role-name',
+                  role: 'table',
+                  name: {
+                    value: 'Accounts',
+                    mode: 'contains',
+                    caseSensitive: false,
+                  },
+                },
+              ],
+              cardinality: 'exactly-one',
+            },
+          },
+        ],
         risk: 'READ_ONLY',
       },
     ],
@@ -236,6 +306,50 @@ function validArtifact(): CapabilityArtifact {
 }
 
 describe('CapabilityArtifact schema', () => {
+  it('persists evidence-backed step preconditions and postconditions', () => {
+    const artifact = validArtifact();
+
+    const enterSearch = artifact.steps.find((step) => step.id === 'enter-member-search');
+
+    expect(enterSearch?.preconditions).toEqual([
+      {
+        kind: 'elementVisible',
+        target: {
+          description: 'Member Name input',
+          strategies: [
+            {
+              kind: 'role-name',
+              role: 'textbox',
+              name: {
+                value: 'Member Name',
+                mode: 'exact',
+                caseSensitive: false,
+              },
+            },
+          ],
+          cardinality: 'exactly-one',
+        },
+      },
+    ]);
+
+    const submitSearch = artifact.steps.find((step) => step.id === 'submit-member-search');
+
+    expect(submitSearch?.postconditions).toEqual([
+      {
+        kind: 'loadingComplete',
+      },
+      {
+        kind: 'textPresent',
+        text: 'Member Details',
+        match: 'contains',
+        caseSensitive: false,
+      },
+    ]);
+
+    const openAccounts = artifact.steps.find((step) => step.id === 'open-accounts');
+
+    expect(openAccounts?.postconditions?.[0]?.kind).toBe('elementVisible');
+  });
   it('persists semantic targets rather than resolved runtime targets', () => {
     const artifact = validArtifact();
 
