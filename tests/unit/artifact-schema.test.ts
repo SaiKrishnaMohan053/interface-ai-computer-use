@@ -281,10 +281,60 @@ function validArtifact(): CapabilityArtifact {
     ],
 
     successCondition: {
-      kind: 'textPresent',
-      text: 'Savings',
-      match: 'contains',
-      caseSensitive: false,
+      kind: 'allOf',
+      conditions: [
+        {
+          kind: 'surface',
+          condition: {
+            kind: 'elementVisible',
+            target: {
+              description: 'Savings Current Balance cell in Accounts table',
+              strategies: [
+                {
+                  kind: 'structural',
+                  query: {
+                    kind: 'table-cell',
+                    table: {
+                      name: {
+                        value: 'Accounts',
+                        mode: 'contains',
+                        caseSensitive: false,
+                      },
+                    },
+                    row: {
+                      columnHeader: {
+                        value: 'Account Type',
+                        mode: 'exact',
+                        caseSensitive: false,
+                      },
+                      value: {
+                        value: 'Savings',
+                        mode: 'exact',
+                        caseSensitive: false,
+                      },
+                    },
+                    column: {
+                      header: {
+                        value: 'Current Balance',
+                        mode: 'exact',
+                        caseSensitive: false,
+                      },
+                    },
+                  },
+                },
+              ],
+              cardinality: 'exactly-one',
+            },
+          },
+        },
+        {
+          kind: 'outputPresent',
+          output: {
+            kind: 'outputRef',
+            name: 'savingsBalance',
+          },
+        },
+      ],
     },
 
     risk: {
@@ -306,6 +356,67 @@ function validArtifact(): CapabilityArtifact {
 }
 
 describe('CapabilityArtifact schema', () => {
+  it('requires final success to prove Savings context and extracted output', () => {
+    const artifact = validArtifact();
+
+    expect(artifact.successCondition).toEqual({
+      kind: 'allOf',
+      conditions: [
+        {
+          kind: 'surface',
+          condition: {
+            kind: 'elementVisible',
+            target: {
+              description: 'Savings Current Balance cell in Accounts table',
+              strategies: [
+                {
+                  kind: 'structural',
+                  query: {
+                    kind: 'table-cell',
+                    table: {
+                      name: {
+                        value: 'Accounts',
+                        mode: 'contains',
+                        caseSensitive: false,
+                      },
+                    },
+                    row: {
+                      columnHeader: {
+                        value: 'Account Type',
+                        mode: 'exact',
+                        caseSensitive: false,
+                      },
+                      value: {
+                        value: 'Savings',
+                        mode: 'exact',
+                        caseSensitive: false,
+                      },
+                    },
+                    column: {
+                      header: {
+                        value: 'Current Balance',
+                        mode: 'exact',
+                        caseSensitive: false,
+                      },
+                    },
+                  },
+                },
+              ],
+              cardinality: 'exactly-one',
+            },
+          },
+        },
+        {
+          kind: 'outputPresent',
+          output: {
+            kind: 'outputRef',
+            name: 'savingsBalance',
+          },
+        },
+      ],
+    });
+  });
+
   it('persists evidence-backed step preconditions and postconditions', () => {
     const artifact = validArtifact();
 

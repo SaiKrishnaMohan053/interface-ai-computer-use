@@ -289,13 +289,35 @@ export const capabilityMetadataSchema = z
   })
   .strict();
 
-/**
- * Phase 3.3 reuses the existing persisted ConditionSpec directly.
- *
- * Composite conditions and artifact-only conditions such as outputPresent
- * are introduced in their dedicated Phase 3 step.
- */
-export const capabilitySuccessConditionSchema = conditionSpecSchema;
+export const artifactSurfaceSuccessConditionSchema = z
+  .object({
+    kind: z.literal('surface'),
+    condition: conditionSpecSchema,
+  })
+  .strict();
+
+export const artifactOutputPresentSuccessConditionSchema = z
+  .object({
+    kind: z.literal('outputPresent'),
+    output: capabilityOutputBindingSchema,
+  })
+  .strict();
+
+const artifactSuccessLeafSchema = z.union([
+  artifactSurfaceSuccessConditionSchema,
+  artifactOutputPresentSuccessConditionSchema,
+]);
+
+export const artifactSuccessConditionSchema = z.union([
+  artifactSuccessLeafSchema,
+
+  z
+    .object({
+      kind: z.literal('allOf'),
+      conditions: z.array(artifactSuccessLeafSchema).min(2).max(10),
+    })
+    .strict(),
+]);
 
 /**
  * Persisted, reusable capability contract.
@@ -322,7 +344,7 @@ export const capabilityArtifactSchema = z
 
     knownBusinessOutcomes: z.array(knownBusinessOutcomeSchema).max(50).optional(),
 
-    successCondition: capabilitySuccessConditionSchema,
+    successCondition: artifactSuccessConditionSchema,
 
     risk: capabilityRiskMetadataSchema,
 
