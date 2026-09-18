@@ -19,7 +19,12 @@ import {
   capabilityOutputBindingSchema,
 } from './artifact-schema.js';
 
-import { normalizeArtifactTargetSpec } from './artifact-normalizer.js';
+import {
+  extractSuccessfulDiscoveryPath,
+  normalizeArtifactTargetSpec,
+} from './artifact-normalizer.js';
+
+import type { NormalizedDiscoveryAction } from './artifact-normalizer.js';
 
 import { assertArtifactSafeToPersist } from './artifact-security.js';
 
@@ -187,16 +192,6 @@ export interface CompileOptions {
   readonly forbiddenSourceLiterals?: readonly string[];
 }
 
-interface SuccessfulTraceAction {
-  readonly step: number;
-  readonly decision: Extract<DiscoveryTraceRecord, { readonly kind: 'model_decision' }>['decision'];
-
-  readonly risk: Extract<
-    DiscoveryTraceRecord,
-    { readonly kind: 'policy_decision' }
-  >['systemRiskLevel'];
-}
-
 function eligibilityError(
   eligibilityCode: ArtifactCompilerEligibilityErrorCode,
   message: string,
@@ -317,64 +312,6 @@ function assertSuccessfulActionTraceIntegrity(source: DiscoveryArtifactSource): 
   }
 }
 
-function findSuccessfulTraceActions(source: DiscoveryArtifactSource): SuccessfulTraceAction[] {
-  const decisionRecords = source.trace.filter(
-    (record): record is Extract<DiscoveryTraceRecord, { readonly kind: 'model_decision' }> =>
-      record.kind === 'model_decision',
-  );
-
-  const successful: SuccessfulTraceAction[] = [];
-
-  for (const decisionRecord of decisionRecords) {
-    const { decision, step } = decisionRecord;
-
-    if (decision.kind === 'complete' || decision.kind === 'escalate') {
-      continue;
-    }
-
-    const records = recordsAtStep(source.trace, step);
-
-    const policyRecord = records.find(
-      (record): record is Extract<DiscoveryTraceRecord, { readonly kind: 'policy_decision' }> =>
-        record.kind === 'policy_decision' && record.actionKind === decision.kind,
-    );
-
-    if (policyRecord === undefined) {
-      sourceInvalid(`Discovery step ${step} has no matching policy decision`);
-    }
-
-    if (policyRecord.policyDecision.decision !== 'ALLOW') {
-      continue;
-    }
-
-    const actionResult = records.find(
-      (record): record is Extract<DiscoveryTraceRecord, { readonly kind: 'action_result' }> =>
-        record.kind === 'action_result' && record.actionKind === decision.kind,
-    );
-
-    if (actionResult === undefined) {
-      sourceInvalid(`Discovery step ${step} has no matching action result`);
-    }
-
-    /*
-     * Failed attempts are discovery evidence, not reusable artifact steps.
-     */
-    if (actionResult.status !== 'success') {
-      continue;
-    }
-
-    successful.push({
-      step,
-      decision,
-      risk: policyRecord.systemRiskLevel,
-    });
-  }
-
-  successful.sort((left, right) => left.step - right.step);
-
-  return successful;
-}
-
 function findInputBinding(options: CompileOptions, sourceStep: number): CompileInputBinding {
   const matches = options.inputBindings.filter((binding) => binding.sourceStep === sourceStep);
 
@@ -428,10 +365,10 @@ function compileTarget(target: unknown): CapabilityStep['target'] {
 
 function compileAction(
   source: DiscoveryArtifactSource,
-  traceAction: SuccessfulTraceAction,
+  traceAction: NormalizedDiscoveryAction,
   options: CompileOptions,
 ): Pick<CapabilityStep, 'action' | 'target'> {
-  const { decision, step } = traceAction;
+  const { decision, sourceStep: step } = traceAction;
 
   switch (decision.kind) {
     case 'click':
@@ -503,12 +440,6 @@ function compileAction(
       };
     }
 
-    /*
-     * 3.22 deliberately compiles only the action shapes exercised by the
-     * primary verified capability. Other artifact actions already exist in
-     * the schema, but compiler support must be added deliberately rather
-     * than guessed.
-     */
     case 'select':
     case 'check':
     case 'uncheck':
@@ -529,10 +460,10 @@ function compileAction(
 
 function compileStep(
   source: DiscoveryArtifactSource,
-  traceAction: SuccessfulTraceAction,
+  traceAction: NormalizedDiscoveryAction,
   options: CompileOptions,
 ): CapabilityStep {
-  const metadata = findStepMetadata(options, traceAction.step);
+  const metadata = findStepMetadata(options, traceAction.sourceStep);
 
   const compiled = compileAction(source, traceAction, options);
 
@@ -679,10 +610,10 @@ function assertSourceEligible(source: DiscoveryArtifactSource, options: CompileO
 }
 
 function assertCompileMappingsConsumed(
-  successfulActions: readonly SuccessfulTraceAction[],
+  successfulActions: readonly NormalizedDiscoveryAction[],
   options: CompileOptions,
 ): void {
-  const successfulSteps = new Set(successfulActions.map((action) => action.step));
+  const successfulSteps = new Set(successfulActions.map((action) => action.sourceStep));
 
   for (const metadata of options.steps) {
     if (!successfulSteps.has(metadata.sourceStep)) {
@@ -705,7 +636,9 @@ export class ArtifactCompiler {
   compile(source: DiscoveryArtifactSource, options: CompileOptions): CapabilityArtifact {
     assertSourceEligible(source, options);
 
-    const successfulActions = findSuccessfulTraceActions(source);
+    const successfulPath = extractSuccessfulDiscoveryPath(source.trace);
+
+    const successfulActions = successfulPath.actions;
 
     if (successfulActions.length === 0) {
       sourceInvalid('Successful discovery contains no reusable successful actions');

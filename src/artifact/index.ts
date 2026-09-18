@@ -95,3 +95,12 @@ export type {
   CompileStepMetadata,
   DiscoveryArtifactSource,
 } from './artifact-compiler.js';
+
+export { extractSuccessfulDiscoveryPath } from './artifact-normalizer.js';
+
+export type {
+  NormalizedDiscoveryAction,
+  SuccessfulPathDiscardReason,
+  SuccessfulPathDiscardRecord,
+  SuccessfulPathExtractionResult,
+} from './artifact-normalizer.js';
