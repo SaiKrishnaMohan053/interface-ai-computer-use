@@ -80,9 +80,15 @@ export { assertArtifactSafeToPersist } from './artifact-security.js';
 
 export type { ArtifactSecurityScanOptions } from './artifact-security.js';
 
-export { ARTIFACT_COMPILER_VERSION, ArtifactCompiler } from './artifact-compiler.js';
+export {
+  ARTIFACT_COMPILER_ELIGIBILITY_ERROR_CODES,
+  ARTIFACT_COMPILER_VERSION,
+  ArtifactCompiler,
+  ArtifactCompilerEligibilityError,
+} from './artifact-compiler.js';
 
 export type {
+  ArtifactCompilerEligibilityErrorCode,
   CompileInputBinding,
   CompileOptions,
   CompileOutputBinding,
