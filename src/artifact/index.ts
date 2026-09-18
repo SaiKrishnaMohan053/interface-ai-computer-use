@@ -75,3 +75,7 @@ export {
 export type { ParsedCapabilityVersion, ParsedSchemaVersion } from './artifact-version.js';
 
 export { normalizeArtifactTargetSpec } from './artifact-normalizer.js';
+
+export { assertArtifactSafeToPersist } from './artifact-security.js';
+
+export type { ArtifactSecurityScanOptions } from './artifact-security.js';

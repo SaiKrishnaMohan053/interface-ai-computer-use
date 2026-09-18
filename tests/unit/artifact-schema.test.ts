@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest';
 import {
   capabilityArtifactSchema,
   parseCapabilityArtifact,
+  assertArtifactSafeToPersist,
+  ArtifactError,
   type CapabilityArtifact,
 } from '../../src/artifact/index.js';
 
@@ -359,6 +361,28 @@ function validArtifact(): CapabilityArtifact {
 }
 
 describe('CapabilityArtifact schema', () => {
+  it('contains no discovery-specific or runtime-sensitive persisted data', () => {
+    const artifact = validArtifact();
+
+    expect(() =>
+      assertArtifactSafeToPersist(artifact, {
+        forbiddenLiterals: ['Alex Morgan', '$12,840.50'],
+      }),
+    ).not.toThrow();
+  });
+
+  it('fails persistence security scanning for injected sensitive state', () => {
+    const artifact = {
+      ...validArtifact(),
+      metadata: {
+        notes: 'Synthetic artifact.',
+        sessionId: 'runtime-session-123',
+      },
+    };
+
+    expect(() => assertArtifactSafeToPersist(artifact)).toThrow(ArtifactError);
+  });
+
   it('persists compact provenance that references the discovery run', () => {
     const artifact = validArtifact();
 
