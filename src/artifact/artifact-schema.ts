@@ -46,14 +46,30 @@ export const waitPolicySchema = z
     }
   });
 
-export const recoveryPolicySchema = z
+export const RECOVERY_CONDITIONS = ['TRANSIENT_LOAD', 'KNOWN_INTERSTITIAL'] as const;
+
+export const recoveryConditionSchema = z.enum(RECOVERY_CONDITIONS);
+
+const retryRecoveryPolicySchema = z
   .object({
     kind: z.literal('retry'),
+    condition: z.literal('TRANSIENT_LOAD'),
     maxAttempts: z.number().int().min(1).max(3),
-
     wait: waitPolicySchema.optional(),
   })
   .strict();
+
+const dismissKnownDialogRecoveryPolicySchema = z
+  .object({
+    kind: z.literal('dismissKnownDialog'),
+    condition: z.literal('KNOWN_INTERSTITIAL'),
+  })
+  .strict();
+
+export const recoveryPolicySchema = z.discriminatedUnion('kind', [
+  retryRecoveryPolicySchema,
+  dismissKnownDialogRecoveryPolicySchema,
+]);
 
 const nameSchema = z.string().trim().min(1, 'Name must not be empty').max(200);
 

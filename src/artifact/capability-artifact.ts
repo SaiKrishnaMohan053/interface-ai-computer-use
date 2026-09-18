@@ -27,6 +27,7 @@ import type {
   artifactAnySuccessConditionSchema,
   artifactNotSuccessConditionSchema,
   artifactSuccessLeafSchema,
+  recoveryConditionSchema,
 } from './artifact-schema.js';
 
 export type CapabilityValueType = z.infer<typeof capabilityValueTypeSchema>;
@@ -84,3 +85,5 @@ export type ArtifactAllSuccessCondition = z.infer<typeof artifactAllSuccessCondi
 export type ArtifactAnySuccessCondition = z.infer<typeof artifactAnySuccessConditionSchema>;
 
 export type ArtifactNotSuccessCondition = z.infer<typeof artifactNotSuccessConditionSchema>;
+
+export type RecoveryCondition = z.infer<typeof recoveryConditionSchema>;

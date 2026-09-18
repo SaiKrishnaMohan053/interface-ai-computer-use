@@ -29,6 +29,8 @@ export {
   artifactAnySuccessConditionSchema,
   artifactNotSuccessConditionSchema,
   artifactSuccessLeafSchema,
+  RECOVERY_CONDITIONS,
+  recoveryConditionSchema,
 } from './artifact-schema.js';
 
 export { PRIMARY_CAPABILITY_ID } from './capability-artifact.js';
@@ -54,6 +56,7 @@ export type {
   ArtifactAnySuccessCondition,
   ArtifactNotSuccessCondition,
   ArtifactSuccessLeaf,
+  RecoveryCondition,
 } from './capability-artifact.js';
 
 export type { ArtifactErrorCode } from './artifact-errors.js';

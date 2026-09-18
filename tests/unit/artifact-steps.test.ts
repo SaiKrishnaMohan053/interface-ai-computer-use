@@ -63,6 +63,7 @@ describe('artifact capability steps', () => {
     expect(
       recoveryPolicySchema.parse({
         kind: 'retry',
+        condition: 'TRANSIENT_LOAD',
         maxAttempts: 2,
         wait: {
           timeoutMs: 2_000,
@@ -71,6 +72,7 @@ describe('artifact capability steps', () => {
       }),
     ).toEqual({
       kind: 'retry',
+      condition: 'TRANSIENT_LOAD',
       maxAttempts: 2,
       wait: {
         timeoutMs: 2_000,
