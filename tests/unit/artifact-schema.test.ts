@@ -338,8 +338,10 @@ function validArtifact(): CapabilityArtifact {
     },
 
     risk: {
-      maxRisk: 'READ_ONLY',
+      summaryRisk: 'READ_ONLY',
+      maxStepRisk: 'REVERSIBLE',
       requiresHumanByDefault: false,
+      runtimePolicyRequired: true,
     },
 
     provenance: {
@@ -356,6 +358,45 @@ function validArtifact(): CapabilityArtifact {
 }
 
 describe('CapabilityArtifact schema', () => {
+  it('preserves risk classification at each capability step', () => {
+    const artifact = validArtifact();
+
+    expect(
+      artifact.steps.map((step) => ({
+        id: step.id,
+        risk: step.risk,
+      })),
+    ).toEqual([
+      {
+        id: 'enter-member-search',
+        risk: 'REVERSIBLE',
+      },
+      {
+        id: 'submit-member-search',
+        risk: 'REVERSIBLE',
+      },
+      {
+        id: 'open-accounts',
+        risk: 'READ_ONLY',
+      },
+      {
+        id: 'read-savings-balance',
+        risk: 'READ_ONLY',
+      },
+    ]);
+  });
+
+  it('summarizes the balance capability as read-only while preserving step risk', () => {
+    const artifact = validArtifact();
+
+    expect(artifact.risk).toEqual({
+      summaryRisk: 'READ_ONLY',
+      maxStepRisk: 'REVERSIBLE',
+      requiresHumanByDefault: false,
+      runtimePolicyRequired: true,
+    });
+  });
+
   it('declares only capability-specific known business outcomes', () => {
     const artifact = validArtifact();
 
@@ -730,8 +771,10 @@ describe('CapabilityArtifact schema', () => {
     const artifact = {
       ...validArtifact(),
       risk: {
-        maxRisk: 'SOMETHING_ELSE',
+        summaryRisk: 'SOMETHING_ELSE',
+        maxStepRisk: 'REVERSIBLE',
         requiresHumanByDefault: false,
+        runtimePolicyRequired: true,
       },
     };
 

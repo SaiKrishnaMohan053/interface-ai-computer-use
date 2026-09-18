@@ -279,8 +279,25 @@ export const knownBusinessOutcomeSchema = z
 
 export const capabilityRiskMetadataSchema = z
   .object({
-    maxRisk: riskLevelSchema,
+    /**
+     * Overall business-effect classification of the capability.
+     *
+     * This does not replace per-step risk classification.
+     */
+    summaryRisk: riskLevelSchema,
+
+    /**
+     * Highest interaction risk declared by any persisted capability step.
+     */
+    maxStepRisk: riskLevelSchema,
+
     requiresHumanByDefault: z.boolean(),
+
+    /**
+     * Persisted risk metadata is never an authorization decision.
+     * Replay must re-evaluate runtime policy before execution.
+     */
+    runtimePolicyRequired: z.literal(true),
   })
   .strict();
 
