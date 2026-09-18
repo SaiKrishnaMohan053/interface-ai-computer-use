@@ -58,6 +58,7 @@ export type {
   ArtifactSuccessLeaf,
   RecoveryCondition,
   CapabilityRiskMetadata,
+  CapabilityProvenance,
 } from './capability-artifact.js';
 
 export type { ArtifactErrorCode } from './artifact-errors.js';

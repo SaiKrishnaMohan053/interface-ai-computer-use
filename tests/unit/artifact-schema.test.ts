@@ -345,9 +345,10 @@ function validArtifact(): CapabilityArtifact {
     },
 
     provenance: {
-      discoveryRunId: 'run-123',
-      compiledAt: '2026-09-15T18:17:49.008Z',
+      discoveryRunId: '9635c0c9-dc3a-4b64-aa38-b1f48a359ea0',
+      compiledAt: '2026-09-18T16:00:00.000Z',
       compilerVersion: '1',
+      sourceGoal: 'Look up a member and return their current savings balance.',
     },
 
     metadata: {
@@ -358,6 +359,26 @@ function validArtifact(): CapabilityArtifact {
 }
 
 describe('CapabilityArtifact schema', () => {
+  it('persists compact provenance that references the discovery run', () => {
+    const artifact = validArtifact();
+
+    expect(artifact.provenance).toEqual({
+      discoveryRunId: '9635c0c9-dc3a-4b64-aa38-b1f48a359ea0',
+      compiledAt: '2026-09-18T16:00:00.000Z',
+      compilerVersion: '1',
+      sourceGoal: 'Look up a member and return their current savings balance.',
+    });
+  });
+
+  it('keeps provenance generalized rather than copying discovery literals', () => {
+    const artifact = validArtifact();
+
+    const serialized = JSON.stringify(artifact.provenance);
+
+    expect(serialized).not.toContain('Alex Morgan');
+    expect(serialized).not.toContain('$12,840.50');
+  });
+
   it('preserves risk classification at each capability step', () => {
     const artifact = validArtifact();
 

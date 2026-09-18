@@ -77,6 +77,13 @@ const descriptionSchema = z.string().trim().min(1, 'Description must not be empt
 
 const versionTextSchema = z.string().trim().min(1, 'Version must not be empty').max(100);
 
+const discoveryRunIdSchema = z
+  .string()
+  .trim()
+  .min(1, 'Discovery run ID must not be empty')
+  .max(200, 'Discovery run ID is too long')
+  .regex(/^[A-Za-z0-9][A-Za-z0-9._:-]*$/, 'Discovery run ID contains unsupported characters');
+
 const compatibilityValueSchema = z
   .string()
   .trim()
@@ -303,7 +310,12 @@ export const capabilityRiskMetadataSchema = z
 
 export const capabilityProvenanceSchema = z
   .object({
-    discoveryRunId: identifierSchema,
+    /**
+     * Opaque reference back to the successful discovery run.
+     *
+     * The artifact stores the reference only, never the full trace.
+     */
+    discoveryRunId: discoveryRunIdSchema,
 
     /**
      * Persist timestamps as ISO strings, never Date instances.
@@ -311,6 +323,14 @@ export const capabilityProvenanceSchema = z
     compiledAt: z.iso.datetime({ offset: true }),
 
     compilerVersion: versionTextSchema,
+
+    /**
+     * Generalized source goal retained for reviewability.
+     *
+     * Concrete discovery inputs, outputs, model reasoning, and raw trace
+     * contents must not be copied into this field.
+     */
+    sourceGoal: descriptionSchema,
   })
   .strict();
 
