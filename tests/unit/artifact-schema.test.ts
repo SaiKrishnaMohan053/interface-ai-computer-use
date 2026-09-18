@@ -781,6 +781,35 @@ describe('CapabilityArtifact schema', () => {
     expect(capabilityArtifactSchema.safeParse(artifact).success).toBe(false);
   });
 
+  it('keeps the primary capability compatibility tenant-neutral', () => {
+    const artifact = validArtifact();
+
+    expect(artifact.compatibility).toEqual({
+      application: 'demo-bank',
+      surfaceKind: 'web',
+      vendorFamily: 'demo-core',
+      supportedVersionRange: '1.x',
+    });
+
+    const serialized = JSON.stringify(artifact.compatibility);
+
+    expect(serialized).not.toContain('tenantId');
+    expect(serialized).not.toContain('customerId');
+    expect(serialized).not.toContain('bankId');
+  });
+
+  it('does not persist deployment-specific compatibility state', () => {
+    const artifact = {
+      ...validArtifact(),
+      compatibility: {
+        ...validArtifact().compatibility,
+        baseUrl: 'https://specific-bank.example.com',
+      },
+    };
+
+    expect(capabilityArtifactSchema.safeParse(artifact).success).toBe(false);
+  });
+
   it('rejects capability semantic versions in schemaVersion', () => {
     const artifact = {
       ...validArtifact(),
