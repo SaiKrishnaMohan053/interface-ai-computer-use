@@ -79,3 +79,13 @@ export { normalizeArtifactTargetSpec } from './artifact-normalizer.js';
 export { assertArtifactSafeToPersist } from './artifact-security.js';
 
 export type { ArtifactSecurityScanOptions } from './artifact-security.js';
+
+export { ARTIFACT_COMPILER_VERSION, ArtifactCompiler } from './artifact-compiler.js';
+
+export type {
+  CompileInputBinding,
+  CompileOptions,
+  CompileOutputBinding,
+  CompileStepMetadata,
+  DiscoveryArtifactSource,
+} from './artifact-compiler.js';
