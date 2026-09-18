@@ -114,6 +114,9 @@ function source(): DiscoveryArtifactSource {
         entryUrl: 'http://127.0.0.1:3000/member-search',
         application: 'demo-bank',
       },
+      parameters: {
+        memberName: 'Alex Morgan',
+      },
     },
 
     result: {
@@ -499,13 +502,6 @@ function options(): CompileOptions {
       },
     ],
 
-    inputBindings: [
-      {
-        sourceStep: 1,
-        inputName: 'memberName',
-      },
-    ],
-
     outputBindings: [
       {
         sourceOutputName: 'alexMorganSavingsBalance',
@@ -560,6 +556,28 @@ function options(): CompileOptions {
 }
 
 describe('ArtifactCompiler', () => {
+  it('rejects a required input when neither request nor compiler parameter metadata provides it', () => {
+    const compiler = new ArtifactCompiler();
+
+    const base = source();
+
+    const requestWithoutParameters = {
+      goal: base.request.goal,
+      target: base.request.target,
+    };
+
+    const sourceWithoutParameters = {
+      ...base,
+      request: requestWithoutParameters,
+    };
+
+    expect(() => compiler.compile(sourceWithoutParameters, options())).toThrowError(
+      expect.objectContaining({
+        code: 'ARTIFACT_PARAMETER_BINDING_INVALID',
+      }),
+    );
+  });
+
   it('rejects incomplete discovery without a completion decision', () => {
     const compiler = new ArtifactCompiler();
 
@@ -707,15 +725,72 @@ describe('ArtifactCompiler', () => {
     expect(second).toEqual(first);
   });
 
-  it('requires explicit member input binding instead of parsing the goal', () => {
+  it('uses DiscoveryRequest.parameters before compiler parameter metadata', () => {
+    const compiler = new ArtifactCompiler();
+
+    const artifact = compiler.compile(source(), options());
+
+    expect(artifact.steps[0]?.action).toEqual({
+      kind: 'type',
+      value: {
+        kind: 'inputRef',
+        name: 'memberName',
+      },
+      mode: 'replace',
+    });
+  });
+
+  it('uses explicit compiler parameter metadata when request metadata is unavailable', () => {
+    const compiler = new ArtifactCompiler();
+
+    const base = source();
+
+    const sourceWithoutRequestParameters = {
+      ...base,
+      request: {
+        ...base.request,
+        parameters: undefined,
+      },
+    };
+
+    const compileOptions = {
+      ...options(),
+      parameters: {
+        memberName: {
+          discoveryValue: 'Alex Morgan',
+        },
+      },
+    };
+
+    const artifact = compiler.compile(sourceWithoutRequestParameters, compileOptions);
+
+    expect(artifact.steps[0]?.action).toEqual({
+      kind: 'type',
+      value: {
+        kind: 'inputRef',
+        name: 'memberName',
+      },
+      mode: 'replace',
+    });
+  });
+
+  it('rejects conflicting request and compiler parameter metadata', () => {
     const compiler = new ArtifactCompiler();
 
     expect(() =>
       compiler.compile(source(), {
         ...options(),
-        inputBindings: [],
+        parameters: {
+          memberName: {
+            discoveryValue: 'Different Person',
+          },
+        },
       }),
-    ).toThrow();
+    ).toThrowError(
+      expect.objectContaining({
+        code: 'ARTIFACT_PARAMETER_BINDING_INVALID',
+      }),
+    );
   });
 
   it('rejects missing verified extracted output', () => {

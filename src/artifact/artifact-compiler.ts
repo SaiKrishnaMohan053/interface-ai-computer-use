@@ -30,6 +30,13 @@ import { assertArtifactSafeToPersist } from './artifact-security.js';
 
 import type { CapabilityArtifact, CapabilityStep } from './capability-artifact.js';
 
+import { resolveCompileParameters, resolveStringInputReference } from './artifact-parameterizer.js';
+
+import type {
+  CompileParameterDefinitions,
+  ResolvedCompileParameter,
+} from './artifact-parameterizer.js';
+
 export const ARTIFACT_COMPILER_VERSION = '1';
 
 export const ARTIFACT_COMPILER_ELIGIBILITY_ERROR_CODES = [
@@ -95,18 +102,6 @@ export interface DiscoveryArtifactSource {
    * Successful read provenance retained by Phase 2.
    */
   readonly extractions: readonly DiscoveryExtractionRecord[];
-}
-
-export interface CompileInputBinding {
-  /**
-   * Discovery step containing the invocation-specific type action.
-   */
-  readonly sourceStep: number;
-
-  /**
-   * Capability input replacing the concrete discovery value.
-   */
-  readonly inputName: string;
 }
 
 export interface CompileOutputBinding {
@@ -175,11 +170,6 @@ export interface CompileOptions {
   readonly steps: readonly CompileStepMetadata[];
 
   /**
-   * Explicit replacement of concrete discovery type values.
-   */
-  readonly inputBindings: readonly CompileInputBinding[];
-
-  /**
    * Explicit mapping from discovery read output names to artifact outputs.
    */
   readonly outputBindings: readonly CompileOutputBinding[];
@@ -190,6 +180,8 @@ export interface CompileOptions {
    * These are forwarded to the Phase 3.21 persistence security scanner.
    */
   readonly forbiddenSourceLiterals?: readonly string[];
+
+  readonly parameters?: CompileParameterDefinitions;
 }
 
 function eligibilityError(
@@ -205,10 +197,6 @@ function eligibilityError(
 
 function sourceInvalid(message: string): never {
   throw new ArtifactError('ARTIFACT_SOURCE_INVALID', message);
-}
-
-function parameterBindingInvalid(message: string): never {
-  throw new ArtifactError('ARTIFACT_PARAMETER_BINDING_INVALID', message);
 }
 
 function outputBindingInvalid(message: string): never {
@@ -312,20 +300,6 @@ function assertSuccessfulActionTraceIntegrity(source: DiscoveryArtifactSource): 
   }
 }
 
-function findInputBinding(options: CompileOptions, sourceStep: number): CompileInputBinding {
-  const matches = options.inputBindings.filter((binding) => binding.sourceStep === sourceStep);
-
-  const match = matches[0];
-
-  if (matches.length !== 1 || match === undefined) {
-    parameterBindingInvalid(
-      `Discovery step ${sourceStep} requires exactly one explicit input binding`,
-    );
-  }
-
-  return match;
-}
-
 function findOutputBinding(
   options: CompileOptions,
   sourceOutputName: string,
@@ -367,6 +341,7 @@ function compileAction(
   source: DiscoveryArtifactSource,
   traceAction: NormalizedDiscoveryAction,
   options: CompileOptions,
+  parameters: readonly ResolvedCompileParameter[],
 ): Pick<CapabilityStep, 'action' | 'target'> {
   const { decision, sourceStep: step } = traceAction;
 
@@ -380,23 +355,12 @@ function compileAction(
       };
 
     case 'type': {
-      const binding = findInputBinding(options, step);
-
-      const declaredInput = options.inputs.find((input) => input.name === binding.inputName);
-
-      if (declaredInput === undefined) {
-        parameterBindingInvalid(
-          `Input binding "${binding.inputName}" is not declared by the capability`,
-        );
-      }
+      const inputRef = resolveStringInputReference(decision.text, parameters);
 
       return {
         action: {
           kind: 'type',
-          value: capabilityInputBindingSchema.parse({
-            kind: 'inputRef',
-            name: binding.inputName,
-          }),
+          value: capabilityInputBindingSchema.parse(inputRef),
           mode: decision.mode,
         },
         target: compileTarget(decision.target),
@@ -462,10 +426,11 @@ function compileStep(
   source: DiscoveryArtifactSource,
   traceAction: NormalizedDiscoveryAction,
   options: CompileOptions,
+  parameters: readonly ResolvedCompileParameter[],
 ): CapabilityStep {
   const metadata = findStepMetadata(options, traceAction.sourceStep);
 
-  const compiled = compileAction(source, traceAction, options);
+  const compiled = compileAction(source, traceAction, options, parameters);
 
   return {
     id: metadata.id,
@@ -622,19 +587,13 @@ function assertCompileMappingsConsumed(
       );
     }
   }
-
-  for (const binding of options.inputBindings) {
-    if (!successfulSteps.has(binding.sourceStep)) {
-      parameterBindingInvalid(
-        `Input binding references non-successful discovery step ${binding.sourceStep}`,
-      );
-    }
-  }
 }
 
 export class ArtifactCompiler {
   compile(source: DiscoveryArtifactSource, options: CompileOptions): CapabilityArtifact {
     assertSourceEligible(source, options);
+
+    const parameters = resolveCompileParameters(source.request, options.inputs, options.parameters);
 
     const successfulPath = extractSuccessfulDiscoveryPath(source.trace);
 
@@ -646,7 +605,9 @@ export class ArtifactCompiler {
 
     assertCompileMappingsConsumed(successfulActions, options);
 
-    const steps = successfulActions.map((action) => compileStep(source, action, options));
+    const steps = successfulActions.map((action) =>
+      compileStep(source, action, options, parameters),
+    );
 
     const candidate = {
       schemaVersion: '1.0',

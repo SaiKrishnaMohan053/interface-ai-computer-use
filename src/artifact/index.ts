@@ -89,7 +89,6 @@ export {
 
 export type {
   ArtifactCompilerEligibilityErrorCode,
-  CompileInputBinding,
   CompileOptions,
   CompileOutputBinding,
   CompileStepMetadata,
@@ -104,3 +103,12 @@ export type {
   SuccessfulPathDiscardRecord,
   SuccessfulPathExtractionResult,
 } from './artifact-normalizer.js';
+
+export { resolveCompileParameters, resolveStringInputReference } from './artifact-parameterizer.js';
+
+export type {
+  CompileParameterDefinition,
+  CompileParameterDefinitions,
+  ParameterizedInputReference,
+  ResolvedCompileParameter,
+} from './artifact-parameterizer.js';
