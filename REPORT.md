@@ -1,207 +1,196 @@
 # 1. Architecture
 
-The system is implemented as a TypeScript modular monolith using Node.js, Playwright, Zod, and Vitest. A single process keeps browser ownership, evidence ordering, policy evaluation, and failure cleanup explicit. Distributed queues or services would add operational complexity without improving the assignment's core computer-use workflow.
+The system is a TypeScript modular monolith using Node.js, Playwright, Zod, and Vitest.
 
-The main runtime boundaries are:
+The main boundaries are:
 
-- `DiscoveryEngine` owns the bounded observe, decide, validate, authorize, resolve, and act loop.
-- `DiscoveryDecisionModel` is the only interface through which the LLM participates.
-- `SurfaceAdapter` separates orchestration from the concrete UI technology.
-- `PlaywrightSurface` implements browser observation and execution.
-- `PolicyEngine` makes deterministic authorization decisions.
-- `TargetResolver` applies ordered semantic target strategies.
-- `SessionManager` owns the live browser session and exclusive actor ownership.
-- `EvidenceRecorder` persists sanitized run events and screenshots.
-- `RunCoordinator` manages run start, finish, and resource cleanup.
+* `DiscoveryEngine` runs the bounded LLM-guided observe, decide, authorize, and act loop.
+* `DiscoveryDecisionModel` isolates LLM participation.
+* `SurfaceAdapter` separates orchestration from concrete UI technology.
+* `PlaywrightSurface` implements browser interaction.
+* `PolicyEngine` performs deterministic authorization.
+* `TargetResolver` resolves ordered semantic targets.
+* `SessionManager` owns the live session and actor ownership.
+* `ArtifactCompiler` converts a successful discovery run into a reusable capability artifact.
+* `ArtifactStore` validates and persists immutable artifact versions.
 
-The LLM receives a goal, a sanitized surface-neutral observation, bounded recent history, and the result of the previous step. It returns one typed decision such as `type`, `click`, `read`, `wait`, `dismiss`, `complete`, or `escalate`.
-
-The model does not receive Playwright objects and cannot directly execute browser operations. Every actionable decision follows this runtime-controlled path:
+The core separation is:
 
 ```text
-LLM decision
--> schema validation
--> system risk classification
--> policy evaluation
--> semantic target resolution
--> SurfaceAdapter execution
+probabilistic discovery
+-> deterministic compiler
+-> reusable capability artifact
 ```
 
-This boundary keeps probabilistic reasoning separate from trusted execution. The LLM proposes what should happen next, while deterministic runtime components decide whether and how it may happen.
-
-Playwright was selected because it provides a practical real browser surface for the assignment. Browser-specific handles remain private to the adapter so the discovery engine is not tied directly to DOM automation.
+The model discovers the workflow, but it does not define the persisted runtime contract directly.
 
 # 2. Artifact schema
 
-The reusable capability artifact and artifact compiler are not implemented yet.
+The capability artifact is not the discovery trace.
 
-Phase 2 keeps discovery data in an explicit run-scoped state. This includes:
+The discovery trace describes what happened during one run. It may contain observations, decisions, policy results, target-resolution attempts, action results, and extracted working values.
 
-- Current step and run start time.
-- Observation fingerprints and repeated-state count.
-- Recently executed decisions and their outcomes.
-- Extracted values such as the Savings balance.
-- Structured discovery step records.
-- Sanitized evidence references.
+The artifact contains only the reusable workflow required for future deterministic execution.
 
-Extracted values are discovery working outputs only. They are not automatically treated as approved reusable capability outputs.
+The artifact includes:
 
-The discovery trace is also separate from the future artifact. It records what occurred during the run, including observations, model decisions, concise decision reasons, policy results, target-resolution attempts, action results, extracted values, runtime events, and screenshots. It does not persist raw model responses or hidden chain-of-thought.
+* Stable capability identity and semantic version.
+* Application compatibility metadata.
+* Typed required and optional inputs.
+* Typed outputs.
+* Ordered steps.
+* Semantic target specifications.
+* Preconditions and postconditions.
+* Wait and recovery metadata.
+* Known business outcomes.
+* Success conditions.
+* Risk metadata.
+* Provenance.
 
-A later artifact compiler will use successful discovery evidence to produce a typed and versioned capability containing:
+Inputs and outputs are explicit contracts. For the example capability:
 
-- Ordered steps and actions.
-- Typed invocation parameters.
-- Typed extracted outputs.
-- Semantic target specifications and ordered fallbacks.
-- Runtime conditions and checkpoints.
-- Capability identity and version information.
+```text
+input:
+memberName:string
 
-Short-lived `ResolvedTarget` values will not be stored in the artifact. They are scoped to one surface, session, and observation and would be unsafe and brittle if reused.
+output:
+savingsBalance:currency
+```
+
+Concrete discovery values are parameterized. The reusable artifact therefore stores an input reference instead of the discovered member name and an output binding instead of the returned balance.
+
+Targets are also normalized before persistence. The artifact stores reusable semantic descriptions such as accessible role/name relationships and structural table queries rather than runtime element handles or discovery-specific model prose.
+
+The Savings lookup demonstrates structural targeting:
+
+```text
+Accounts table
+-> row where Account Type = Savings
+-> Current Balance column
+```
+
+This does not depend on recorded row or column positions.
 
 # 3. Determinism & error handling
 
-Discovery is intentionally probabilistic because an LLM selects each next decision. The runtime surrounding that decision is deterministic and bounded.
+Discovery is intentionally probabilistic because the LLM chooses each next action.
 
-The model must return one structured decision that validates against the discovery decision schema. Invalid JSON, unsupported actions, missing targets, and invalid fields are rejected. One structured-output retry is allowed. If the second response is still invalid, the run returns `MODEL_DECISION_VALIDATION_FAILED`. There is no unbounded correction loop.
+Artifact compilation is deterministic.
 
-The discovery run has configurable limits for:
+Given the same successful discovery source and the same compile configuration, the compiler produces the same serialized capability artifact and SHA-256 hash.
 
-- Maximum steps.
-- Total run timeout.
-- Repeated observations without meaningful progress.
-- Model completion.
-- Model escalation.
-- Policy denial.
-- Required human intervention.
-- Hard surface-action failure.
-
-Observation fingerprints are produced deterministically from useful state such as URL, title, meaningful visible text, visible control signatures, and dialog signatures. Repeated equivalent states beyond the configured threshold produce a deliberate stuck or dead-end result. The model is not responsible for deciding whether the runtime is stuck.
-
-Target resolution evaluates strategies in order:
+Compilation performs:
 
 ```text
-0 matches    -> try the next strategy
-1 match      -> resolve the target
-many matches -> record ambiguity and try the next strategy
+successful discovery path extraction
+-> parameterization
+-> target normalization
+-> artifact construction
+-> schema validation
+-> semantic validation
+-> security validation
+-> deterministic serialization
+-> versioned persistence
 ```
 
-If all strategies fail, the resolver returns `TARGET_NOT_FOUND` or `TARGET_AMBIGUOUS`. The system never follows a model suggestion to click the first ambiguous match.
+Only successful, policy-approved discovery actions are eligible for the artifact. Failed attempts, retries, completion decisions, model-control events, and unrelated runtime noise are not compiled into executable steps.
 
-The accounts-table read demonstrates structural targeting. It locates the Accounts table, finds the row where Account Type equals Savings, derives the Current Balance column from its header, and reads the corresponding cell. It does not depend on a recorded row or column number.
+Stored capability versions are immutable. A different artifact cannot silently replace an existing version.
 
-Runtime application states are handled deliberately:
+The artifact also declares explicit success conditions and known business outcomes so future replay does not have to infer success from the final page state.
 
-- Normal state allows discovery to continue.
-- Slow loading triggers a bounded condition wait instead of repeated clicking.
-- Permission denial returns a structured business outcome.
-- Session expiry stops automation with a typed failure.
-- Application errors stop with a typed failure.
-- Known safe dialogs may be dismissed through normal policy and targeting.
-- Unknown or risky dialogs require escalation.
-
-An LLM `complete` decision does not automatically produce success. For the Savings lookup, completion is accepted only when a Savings balance has actually been extracted and the final observation supports the expected account context.
-
-The future replay path will not invoke an LLM for decisions. It will execute the compiled artifact deterministically and verify its declared checkpoint. Replay is not implemented yet.
+Deterministic replay itself is intentionally deferred to the next phase.
 
 # 4. Heterogeneity & multi-tenant
 
-The orchestration layer depends on `SurfaceAdapter`, not directly on Playwright. The adapter is responsible for observing the current surface, resolving surface-specific targets, performing actions, evaluating conditions, and capturing in-memory evidence.
+The workflow contract is separated from Playwright through `SurfaceAdapter`.
 
-The model consumes a surface-neutral observation containing:
+Artifacts describe semantic intent rather than browser-specific runtime handles. Target strategies can include accessible role/name relationships, labels, visible text, structural relationships, and explicit selector fallbacks.
 
-- Current location.
-- Meaningful visible text.
-- Observable controls.
-- Dialogs and interstitials.
-- Loading state.
-- Surface context hints.
+A future browser, legacy-web, desktop, accessibility-tree, or screenshot-based adapter can resolve the same artifact-level target intent using its own surface implementation.
 
-Browser handles, cookies, authentication tokens, raw DOM objects, and Playwright locators are excluded.
+Application compatibility metadata is explicit in the artifact so future vendor versions or tenant-specific variants can be checked rather than silently assumed compatible.
 
-Model decisions use semantic `TargetSpec` descriptions with ordered strategies such as role and accessible name, label, visible text, structural table relationships, CSS, or XPath. Semantic and structural strategies are preferred, while implementation-specific selectors remain explicit fallbacks.
-
-This creates a seam for future legacy-web or desktop adapters. Another adapter could produce the same observation contract and resolve the same semantic intent using an accessibility tree, OS automation, screenshot coordinates, or another surface mechanism.
-
-Multi-tenant artifact reuse is not implemented yet. The future artifact design should separate reusable vendor-level workflow semantics from tenant-specific origin, route, branding, and selector overrides. Application and tenant versions should be explicit so drift can be detected rather than silently ignored.
+Full multi-tenant specialization and drift management are not implemented.
 
 # 5. Escalation & handoff
 
-Session ownership is exclusive: `NONE`, `DISCOVERY`, `REPLAY`, or `HUMAN`. Automation can act only while it owns an active session.
+Session ownership is explicit:
 
-Discovery returns `intervention_required` when:
+```text
+NONE
+DISCOVERY
+REPLAY
+HUMAN
+```
 
-- Policy returns `REQUIRE_HUMAN`.
-- The model explicitly requests escalation.
-- An unknown or risky dialog is detected.
-- The runtime reaches a state that cannot be handled safely.
+Discovery can produce `intervention_required` when policy requires a human, the model explicitly escalates, or the runtime cannot safely continue.
 
-The intervention record contains enough context for a future operator workflow, including the goal, current step, observation identity, current location, reason code, reason, and relevant evidence.
+The session layer already supports preserving the same browser context while ownership transfers between automation and a human.
 
-The existing session lifecycle supports pausing automation, preserving the same BrowserContext and Page, transferring ownership to a human, and returning ownership to automation. This prevents handoff from opening a fresh session and losing application state.
-
-Phase 2 validates the escalation result and control-transfer seam, but it does not implement the full operator interface, real-time co-browsing transport, or complete resume-after-human workflow.
+A complete operator interface and production resume-after-human workflow are intentionally deferred.
 
 # 6. Safety
 
-Policy enforcement is deterministic and fail-closed. The model cannot bypass, approve, or weaken a policy decision.
+Policy and artifact persistence both fail closed.
 
-The system remains authoritative for risk classification. Model-provided intent may be considered as a hint, but it is not trusted as the final risk value.
+During discovery:
 
-Current discovery risk mapping includes:
+```text
+model decision
+-> schema validation
+-> system risk classification
+-> policy evaluation
+-> target resolution
+-> execution
+```
 
-- Read, navigation, and search actions as `READ_ONLY`.
-- Form typing before submission as `REVERSIBLE`.
-- Sensitive writes as `SENSITIVE_WRITE`.
-- Final create or submit actions as `IRREVERSIBLE`.
+Only `ALLOW` reaches execution.
 
-Policy outcomes are:
+Before artifact persistence, the compiler and store enforce:
 
-- `ALLOW`: target resolution and execution may continue.
-- `DENY`: return a structured policy-blocked failure.
-- `REQUIRE_HUMAN`: return `intervention_required`.
+* Schema validation.
+* Semantic validation.
+* Security validation.
+* Deterministic serialization.
+* Immutable versioned persistence.
 
-Only `ALLOW` reaches target resolution or `SurfaceAdapter.perform()`.
+The persisted artifact excludes:
 
-Target cardinality must be exactly one. Missing, stale, detached, foreign, and ambiguous targets are rejected. A cancelled or timed-out mutating browser action invalidates the surface so it cannot complete later without runtime supervision.
+* API keys and secrets.
+* Cookies and authentication state.
+* Browser or Playwright handles.
+* Raw model responses.
+* Hidden reasoning.
+* Raw DOM state.
+* Session state.
+* Screenshots and trace payloads.
+* Invocation-specific member names and financial values.
 
-Before persistence, evidence is recursively sanitized. API keys, tokens, cookies, authorization values, passwords, browser handles, raw OpenAI responses, and hidden reasoning are not persisted.
-
-Screenshots cannot be sanitized like structured JSON. Persistent screenshots are therefore restricted by the existing evidence policy. The genuine assignment run uses only the fictional banking fixture and explicitly enables synthetic screenshot persistence.
-
-The frozen evidence package was also scanned for common secret patterns and the configured OpenAI API key before being staged.
+The artifact retains provenance without retaining the sensitive discovery transcript. The example artifact records the discovery run identifier, compiler version, source goal, and compile timestamp.
 
 # 7. Cuts
 
-The current implementation completes the Phase 1 runtime foundation and Phase 2 discovery slice:
+The implemented vertical slice currently includes:
 
-- Fictional banking application and deterministic scenarios.
-- Browser surface abstraction and Playwright implementation.
-- Session ownership and lifecycle management.
-- Genuine LLM-driven discovery.
-- Typed model decisions and bounded validation retry.
-- System-authoritative risk classification.
-- Policy enforcement for every proposed action.
-- Ordered semantic target resolution.
-- Read extraction and discovery working memory.
-- Bounded stopping and repeated-state detection.
-- Runtime application-state handling.
-- Goal completion verification.
-- Structured discovery results.
-- Sanitized discovery trace, events, screenshots, and final evidence.
-- Deterministic fake-model unit and integration tests.
-- A genuine successful OpenAI discovery run.
+```text
+natural-language goal
+-> genuine LLM-driven discovery
+-> policy-controlled UI execution
+-> successful-run evidence
+-> deterministic artifact compilation
+-> typed parameterized capability
+-> validated versioned persistence
+-> integrity hash and compilation evidence
+```
 
-The following are intentionally deferred:
+The following remain intentionally deferred:
 
-- Final capability artifact schema.
-- Discovery-to-artifact compiler.
-- Artifact approval, storage, loading, and parameter binding.
-- Deterministic replay.
-- Replay checkpoints and recovery behavior.
-- Replay evidence and exceptional-state demonstration.
-- Full human operator UI.
-- Complete live human takeover and resume workflow.
-- Cross-tenant artifact specialization and drift management.
+* Deterministic replay without the LLM.
+* Replay checkpoints and recovery execution.
+* Replay evidence and exceptional-state demonstration.
+* Full human operator UI and production takeover workflow.
+* Cross-tenant specialization and drift management.
+* Artifact approval workflow.
 
-These are not documented as runnable features because they do not exist yet. The report will be finalized after the remaining artifact, replay, and handoff phases are implemented.
+These are deferred at clean architectural boundaries rather than represented as implemented features.

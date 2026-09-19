@@ -2,74 +2,49 @@
 
 An interface.ai take-home implementation for policy-controlled computer-use automation.
 
-The implemented system currently supports:
+The implemented flow is:
 
 ```text
 Natural-language goal
--> genuine LLM-driven discovery against a live browser UI
--> schema validation
--> deterministic risk and policy evaluation
--> semantic target resolution
--> browser execution
--> structured results and sanitized evidence
+-> LLM-guided discovery against a live UI
+-> typed capability artifact
+-> deterministic artifact persistence
 ```
 
-Capability artifact compilation, deterministic replay, and the full human operator interface are not implemented yet.
-
-## Current status
-
-Phase 1 runtime foundations and Phase 2 discovery are complete.
-
-Current functionality includes:
-
-- A fictional banking application with normal and injected runtime scenarios.
-- A Playwright browser surface behind a surface-neutral adapter.
-- An LLM-driven observe, decide, and act discovery loop.
-- Typed model decisions validated before execution.
-- System-authoritative risk classification and policy enforcement.
-- Ordered semantic target resolution with no first-match guessing.
-- Read extraction into discovery run state.
-- Bounded max-step, timeout, repeated-state, and failure stopping conditions.
-- Structured success, business outcome, intervention, and failure results.
-- Sanitized event logs, discovery traces, screenshots, and final results.
-- Deterministic fake-model tests that do not call OpenAI.
+Deterministic replay is the next production execution phase. The full human operator interface is intentionally not implemented.
 
 ## Setup
 
 Requirements:
 
-- Node.js 24.x
-- npm
-- Playwright Chromium
-- An OpenAI API key for genuine discovery runs
+* Node.js 24.x
+* npm
+* Playwright Chromium
+* An OpenAI API key for genuine discovery runs
 
-Install dependencies and Chromium:
+Install:
 
 ```sh
 npm ci
 npx playwright install chromium
 ```
 
-Copy the environment template:
+Create the local environment file:
 
 ```powershell
 Copy-Item .env.example .env
 ```
 
-Configure at least:
+Configure:
 
 ```dotenv
 OPENAI_API_KEY=your-api-key
 OPENAI_MODEL=your-model-name
 ```
 
-`OPENAI_MODEL` is configurable. Additional timeout, retry, and output-token settings are documented in `.env.example`.
-
 Do not commit `.env` or API keys.
 
 ## Start the demo application
-
-Start the fictional banking application:
 
 ```sh
 npm run dev
@@ -81,21 +56,9 @@ Open:
 http://127.0.0.1:3000/member-search
 ```
 
-The normal demo path is:
-
-```text
-Alex Morgan
--> Member Details
--> Accounts
--> Savings Current Balance
--> $12,840.50
-```
-
-All members and financial values are fictional.
+The application uses fictional members and financial data.
 
 ## Run genuine discovery
-
-With the demo application running:
 
 ```powershell
 npm run discover -- `
@@ -105,91 +68,155 @@ npm run discover -- `
   --synthetic-screenshots
 ```
 
-If `--target` is omitted, the discovery CLI starts and connects to the local demo automatically:
-
-```powershell
-npm run discover -- `
-  --goal "Look up Alex Morgan and return their current savings balance." `
-  --headed `
-  --synthetic-screenshots
-```
-
-The command prints:
-
-- A structured discovery result.
-- Extracted outputs.
-- The evidence directory.
-- The target URL.
-
-Expected successful output includes:
-
-```json
-{
-  "status": "success",
-  "outputs": {
-    "alexMorganSavingsBalance": "$12,840.50"
-  }
-}
-```
-
-The preserved genuine OpenAI run is available under:
+A preserved successful OpenAI-driven discovery run is available at:
 
 ```text
 evidence/discovery-success/
 ```
 
-It contains the run metadata, sanitized event log, screenshots, final result, and integrity hashes.
+Discovery produces structured results and sanitized evidence. Raw model responses, secrets, cookies, browser handles, and hidden reasoning are not persisted.
+
+## Capability artifact
+
+A capability artifact is the reusable, typed representation of a successful workflow.
+
+It is deliberately separate from the discovery trace.
+
+The artifact records:
+
+* Capability identity and version.
+* Typed inputs and outputs.
+* Ordered executable steps.
+* Semantic target specifications.
+* Preconditions, postconditions, and success conditions.
+* Known business outcomes.
+* Risk metadata.
+* Provenance back to the discovery run.
+
+Invocation-specific values such as the discovered member name or returned balance are parameterized instead of being persisted as reusable workflow data.
+
+The preserved example capability is:
+
+```text
+lookup_savings_balance
+```
+
+## Compile the artifact
+
+Compile the preserved discovery run with:
+
+```powershell
+npm run compile-artifact -- `
+  --source evidence/discovery-success `
+  --config config/capabilities/lookup-savings-balance.json
+```
+
+The command prints:
+
+```text
+Capability
+Version
+Inputs
+Outputs
+Step count
+Risk
+Stored path
+SHA-256
+```
+
+The resulting artifact is stored at:
+
+```text
+artifacts/lookup_savings_balance/1.0.0.json
+```
+
+Its integrity hash is stored at:
+
+```text
+artifacts/lookup_savings_balance/1.0.0.sha256
+```
+
+Compilation evidence is preserved under:
+
+```text
+evidence/artifact-compilation/
+```
+
+## Artifact versioning
+
+Capability versions use semantic versioning.
+
+Persisted versions are immutable. A different artifact cannot overwrite an existing capability version.
+
+The compile CLI may reuse an existing version only when its deterministic serialized content is identical.
+
+## Inspect the artifact
+
+The artifact is plain JSON and can be reviewed directly:
+
+```powershell
+Get-Content `
+  .\artifacts\lookup_savings_balance\1.0.0.json
+```
+
+From that file alone a reviewer can determine:
+
+* What the capability does.
+* What input it requires.
+* What output it returns.
+* Which steps it performs.
+* How UI targets are identified.
+* Which business outcomes are recognized.
+* What proves successful completion.
+* What risk metadata applies.
+* Which discovery run produced it.
 
 ## Run without OpenAI
 
-The deterministic scripted model exercises the discovery runtime without making OpenAI calls:
+The deterministic scripted model exercises discovery without calling OpenAI:
 
 ```sh
 npx vitest run tests/integration/scripted-discovery-engine.test.ts
 ```
 
-Run the focused runtime scenario coverage:
+Runtime scenario coverage:
 
 ```sh
 npx vitest run tests/integration/discovery-scenarios.test.ts
 ```
 
-These tests cover normal, slow, permission-denied, session-expired, dialog, and application-error behavior.
-
 ## Verify
 
 ```sh
+npm test
 npm run typecheck
 npm run lint
 npm run format:check
-npm run test:unit
-npm run test:integration
 npm run build
 ```
 
 ## Safety boundaries
 
-Every actionable model decision follows this order:
+Model decisions do not directly control the browser.
 
 ```text
 LLM decision
 -> schema validation
 -> system risk classification
 -> policy evaluation
--> ALLOW / DENY / REQUIRE_HUMAN
+-> semantic target resolution
+-> surface execution
 ```
 
-Only `ALLOW` reaches target resolution and execution.
+Only policy-approved actions reach execution.
 
-Additional guarantees:
+Additional guarantees include:
 
-- The model cannot override policy decisions.
-- Ambiguous targets are never resolved by selecting the first match.
-- Risk classification remains system-authoritative.
-- Discovery runs have bounded steps, timeout, and repeated-state limits.
-- Secrets, tokens, cookies, raw OpenAI responses, and hidden reasoning are not persisted.
-- Screenshots and traces follow the existing synthetic-data evidence restrictions.
-- Runtime-generated evidence is ignored by Git by default.
-- The sanitized `evidence/discovery-success/` package is intentionally preserved for review.
+* Ambiguous targets are never resolved by choosing the first match.
+* Risk classification is system-authoritative.
+* Discovery execution is bounded by steps, timeout, and repeated-state detection.
+* Artifact persistence performs schema, semantic, and security validation.
+* Secrets, raw model responses, session state, runtime handles, and invocation-specific values are excluded from reusable artifacts.
+* Stored artifacts use deterministic serialization and versioned immutable persistence.
 
-See [REPORT.md](./REPORT.md) for the current design decision notes and deliberate cuts.
+See [REPORT.md](./REPORT.md) for the design decisions and deliberate cuts.
