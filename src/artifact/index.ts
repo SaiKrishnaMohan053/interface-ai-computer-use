@@ -64,9 +64,12 @@ export type {
 export type { ArtifactErrorCode } from './artifact-errors.js';
 
 export {
+  CAPABILITY_VERSIONING_POLICY,
   CURRENT_ARTIFACT_SCHEMA_VERSION,
   artifactSchemaVersionSchema,
+  assertValidCapabilityVersion,
   capabilityVersionSchema,
+  compareCapabilityVersions,
   isSupportedArtifactSchemaVersion,
   parseArtifactSchemaVersion,
   parseCapabilityVersion,
@@ -120,3 +123,9 @@ export {
   ArtifactSemanticValidationError,
   validateCapabilityArtifactSemantics,
 } from './artifact-validator.js';
+
+export { serializeCapabilityArtifact } from './artifact-serialization.js';
+
+export { ArtifactStore } from './artifact-store.js';
+
+export type { ArtifactStoreOptions } from './artifact-store.js';
