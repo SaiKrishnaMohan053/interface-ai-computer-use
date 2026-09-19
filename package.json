@@ -12,6 +12,7 @@
     "smoke": "node --import tsx src/cli/smoke.ts",
     "discover": "node --env-file-if-exists=.env --import tsx src/cli/discover.ts",
     "build": "tsc -p tsconfig.build.json",
+    "compile-artifact": "node --import tsx src/cli/compile-artifact.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "lint": "eslint . --max-warnings 0",
     "format": "prettier --write .",

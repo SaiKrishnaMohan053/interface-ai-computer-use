@@ -1,0 +1,248 @@
+{
+  "compiledAt": "2026-09-18T16:00:00.000Z",
+  "sourceGoal": "Look up a member and return their current savings balance.",
+
+  "identity": {
+    "id": "lookup_savings_balance",
+    "name": "Lookup Savings Balance",
+    "version": "1.0.0",
+    "description": "Searches for a member and returns the current balance of their Savings account."
+  },
+
+  "compatibility": {
+    "application": "demo-bank",
+    "vendorFamily": "demo-core",
+    "surfaceKind": "web",
+    "supportedVersionRange": "1.x"
+  },
+
+  "inputs": [
+    {
+      "name": "memberName",
+      "type": "string",
+      "required": true,
+      "description": "Member name used for search.",
+      "sensitive": true
+    }
+  ],
+
+  "outputs": [
+    {
+      "name": "savingsBalance",
+      "type": "currency",
+      "required": true,
+      "description": "Current balance of the member's Savings account."
+    }
+  ],
+
+  "discoveryBindings": {
+    "inputs": [
+      {
+        "inputName": "memberName",
+        "sourceStep": 1,
+        "actionKind": "type",
+        "field": "text"
+      }
+    ],
+
+    "outputs": [
+      {
+        "outputName": "savingsBalance",
+        "sourceStep": 4,
+        "actionKind": "read"
+      }
+    ]
+  },
+
+  "preconditions": [
+    {
+      "kind": "textPresent",
+      "text": "Member Search",
+      "match": "contains",
+      "caseSensitive": false
+    }
+  ],
+
+  "steps": [
+    {
+      "sourceStep": 1,
+      "id": "enter-member-search",
+      "description": "Enter the member name used for search.",
+      "preconditions": [
+        {
+          "kind": "elementVisible",
+          "target": {
+            "description": "Member Name input",
+            "strategies": [
+              {
+                "kind": "role-name",
+                "role": "textbox",
+                "name": {
+                  "value": "Member Name",
+                  "mode": "exact",
+                  "caseSensitive": false
+                }
+              }
+            ],
+            "cardinality": "exactly-one"
+          }
+        }
+      ]
+    },
+
+    {
+      "sourceStep": 2,
+      "id": "submit-member-search",
+      "description": "Submit the member search.",
+      "postconditions": [
+        {
+          "kind": "loadingComplete"
+        },
+        {
+          "kind": "textPresent",
+          "text": "Member Details",
+          "match": "contains",
+          "caseSensitive": false
+        }
+      ],
+      "wait": {
+        "timeoutMs": 5000,
+        "pollIntervalMs": 100
+      }
+    },
+
+    {
+      "sourceStep": 3,
+      "id": "open-accounts",
+      "description": "Open the member Accounts view.",
+      "postconditions": [
+        {
+          "kind": "elementVisible",
+          "target": {
+            "description": "Accounts table",
+            "strategies": [
+              {
+                "kind": "text",
+                "text": {
+                  "value": "Accounts",
+                  "mode": "exact",
+                  "caseSensitive": false
+                }
+              }
+            ],
+            "cardinality": "exactly-one"
+          }
+        }
+      ],
+      "wait": {
+        "timeoutMs": 5000,
+        "pollIntervalMs": 100
+      }
+    },
+
+    {
+      "sourceStep": 4,
+      "id": "read-savings-balance",
+      "description": "Read the current balance of the Savings account.",
+      "preconditions": [
+        {
+          "kind": "elementVisible",
+          "target": {
+            "description": "Accounts table",
+            "strategies": [
+              {
+                "kind": "text",
+                "text": {
+                  "value": "Accounts",
+                  "mode": "exact",
+                  "caseSensitive": false
+                }
+              }
+            ],
+            "cardinality": "exactly-one"
+          }
+        }
+      ]
+    }
+  ],
+
+  "knownBusinessOutcomes": [
+    {
+      "code": "MEMBER_NOT_FOUND",
+      "description": "No member matched the supplied lookup input.",
+      "detector": {
+        "kind": "textPresent",
+        "text": "Member not found",
+        "match": "contains",
+        "caseSensitive": false
+      }
+    }
+  ],
+
+  "successCondition": {
+    "kind": "all",
+    "conditions": [
+      {
+        "kind": "surface",
+        "condition": {
+          "kind": "elementVisible",
+          "target": {
+            "description": "Savings Current Balance cell in Accounts table",
+            "strategies": [
+              {
+                "kind": "structural",
+                "query": {
+                  "kind": "table-cell",
+                  "table": {
+                    "name": {
+                      "value": "Accounts",
+                      "mode": "contains",
+                      "caseSensitive": false
+                    }
+                  },
+                  "row": {
+                    "columnHeader": {
+                      "value": "Account Type",
+                      "mode": "exact",
+                      "caseSensitive": false
+                    },
+                    "value": {
+                      "value": "Savings",
+                      "mode": "exact",
+                      "caseSensitive": false
+                    }
+                  },
+                  "column": {
+                    "header": {
+                      "value": "Current Balance",
+                      "mode": "exact",
+                      "caseSensitive": false
+                    }
+                  }
+                }
+              }
+            ],
+            "cardinality": "exactly-one"
+          }
+        }
+      },
+
+      {
+        "kind": "outputPresent",
+        "output": {
+          "kind": "outputRef",
+          "name": "savingsBalance"
+        }
+      }
+    ]
+  },
+
+  "risk": {
+    "summaryRisk": "READ_ONLY",
+    "maxStepRisk": "REVERSIBLE",
+    "requiresHumanByDefault": false,
+    "runtimePolicyRequired": true
+  },
+
+  "metadata": {}
+}
