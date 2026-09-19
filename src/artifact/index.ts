@@ -129,3 +129,5 @@ export { serializeCapabilityArtifact } from './artifact-serialization.js';
 export { ArtifactStore } from './artifact-store.js';
 
 export type { ArtifactStoreOptions } from './artifact-store.js';
+
+export * from './artifact-integrity.js';
