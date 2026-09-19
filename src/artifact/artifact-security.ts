@@ -14,42 +14,93 @@ export interface ArtifactSecurityScanOptions {
   readonly forbiddenLiterals?: readonly string[];
 }
 
+/**
+ * Field names that must never appear in a reusable persisted artifact.
+ *
+ * Keys are normalized before comparison:
+ *
+ * api_key
+ * api-key
+ * ApiKey
+ *
+ * all become:
+ *
+ * apikey
+ */
 const FORBIDDEN_KEY_NAMES = new Set([
+  // Secrets / credentials.
   'apikey',
   'apitoken',
   'accesstoken',
   'refreshtoken',
   'token',
+  'secrettoken',
+  'clientsecret',
+  'secret',
   'cookie',
   'cookies',
+  'setcookie',
   'password',
   'passwd',
+  'pwd',
   'authorization',
   'authheader',
   'authorizationheader',
 
+  // Browser/runtime handles and identifiers.
   'browsercontextid',
   'browsercontext',
   'pagehandle',
+  'pageid',
   'locator',
   'locatorobject',
+  'locatorid',
   'elementhandle',
   'element',
+  'jshandle',
+  'cdpsession',
+  'resolvedtarget',
+  'targethandle',
+  'runtimehandle',
+  'runtimeid',
 
+  // Raw DOM / HTML.
   'rawdom',
   'rawhtml',
+  'htmlsnapshot',
+  'domsnapshot',
+
+  // Raw provider/model payloads.
   'rawopenairesponse',
   'rawmodelresponse',
   'modelresponse',
+  'rawproviderresponse',
+  'providerresponse',
+  'rawproviderpayload',
+  'providerpayload',
+  'rawmodelpayload',
+  'modelpayload',
+  'rawrequestpayload',
+  'rawresponsepayload',
 
+  // Model reasoning / rationale.
   'chainofthought',
   'chainofthoughts',
+  'cot',
   'reasoning',
   'reasoningtrace',
   'modelrationale',
+  'rationale',
 
+  // Session/run-time transient IDs.
+  //
+  // discoveryRunId is intentionally NOT forbidden. It is safe provenance.
   'sessionid',
   'browsersessionid',
+  'observationid',
+  'actionid',
+  'dialogid',
+  'frameid',
 ]);
 
 function normalizeKey(key: string): string {
@@ -63,6 +114,7 @@ function normalizeForbiddenLiteral(value: string): string {
 function containsSecretLikeValue(value: string): boolean {
   const trimmed = value.trim();
 
+  // Authorization header values.
   if (/^bearer\s+\S+/i.test(trimmed)) {
     return true;
   }
@@ -71,11 +123,58 @@ function containsSecretLikeValue(value: string): boolean {
     return true;
   }
 
+  // OpenAI-style API keys.
   if (/^sk-[A-Za-z0-9_-]{16,}$/i.test(trimmed)) {
     return true;
   }
 
+  // GitHub tokens.
+  if (/^(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{20,}$/i.test(trimmed)) {
+    return true;
+  }
+
+  if (/^github_pat_[A-Za-z0-9_]{20,}$/i.test(trimmed)) {
+    return true;
+  }
+
+  // Slack-style tokens.
+  if (/^xox[baprs]-[A-Za-z0-9-]{10,}$/i.test(trimmed)) {
+    return true;
+  }
+
+  // Google-style API key.
+  if (/^AIza[A-Za-z0-9_-]{20,}$/i.test(trimmed)) {
+    return true;
+  }
+
+  // JWT-like bearer material.
+  if (/^[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}$/.test(trimmed)) {
+    return true;
+  }
+
+  // Header-looking cookie data.
   if (/^cookie\s*:/i.test(trimmed)) {
+    return true;
+  }
+
+  if (/^set-cookie\s*:/i.test(trimmed)) {
+    return true;
+  }
+
+  // Credentials embedded in otherwise generic text fields.
+  if (/\b(?:password|passwd|pwd)\s*[:=]\s*\S+/i.test(trimmed)) {
+    return true;
+  }
+
+  if (
+    /\b(?:api[_ -]?key|api[_ -]?token|access[_ -]?token|refresh[_ -]?token)\s*[:=]\s*\S+/i.test(
+      trimmed,
+    )
+  ) {
+    return true;
+  }
+
+  if (/\bauthorization\s*:\s*(?:bearer|basic)\s+\S+/i.test(trimmed)) {
     return true;
   }
 
@@ -89,8 +188,53 @@ function containsRawDom(value: string): boolean {
     /^<!doctype\s+html/i.test(trimmed) ||
     /^<html[\s>]/i.test(trimmed) ||
     /^<body[\s>]/i.test(trimmed) ||
-    /^<div[\s>][\s\S]*<\/div>$/i.test(trimmed)
+    /^<div[\s>][\s\S]*<\/div>$/i.test(trimmed) ||
+    /^<form[\s>][\s\S]*<\/form>$/i.test(trimmed) ||
+    /^<table[\s>][\s\S]*<\/table>$/i.test(trimmed)
   );
+}
+
+function containsRuntimeHandleValue(value: string): boolean {
+  const trimmed = value.trim();
+
+  /*
+   * Do not reject ordinary words such as "page" or "element".
+   *
+   * These patterns target concrete browser/runtime object names that have
+   * no place in a declarative persisted artifact.
+   */
+  return (
+    /\bBrowserContext\b/.test(trimmed) ||
+    /\bElementHandle\b/.test(trimmed) ||
+    /\bJSHandle\b/.test(trimmed) ||
+    /\bCDPSession\b/.test(trimmed) ||
+    /\bResolvedTarget\b/.test(trimmed) ||
+    /\bLocator@/i.test(trimmed) ||
+    /\bPlaywright\b.*\bLocator\b/i.test(trimmed)
+  );
+}
+
+function containsProviderPayloadMarker(value: string): boolean {
+  const trimmed = value.trim();
+
+  /*
+   * Catch raw provider objects accidentally stringified into metadata.
+   *
+   * This is deliberately narrower than looking for normal words such as
+   * "OpenAI" or "model", which may legitimately appear in documentation.
+   */
+  return /"choices"\s*:\s*\[/i.test(trimmed) && /"usage"\s*:/i.test(trimmed);
+}
+
+function throwSensitive(
+  message: string,
+  path: readonly string[],
+  details?: Readonly<Record<string, unknown>>,
+): never {
+  throw new ArtifactError('ARTIFACT_SENSITIVE_DATA_DETECTED', message, {
+    path: path.join('.') || '<root>',
+    ...details,
+  });
 }
 
 function scanValue(
@@ -106,23 +250,31 @@ function scanValue(
     );
 
     if (containsForbiddenLiteral) {
-      throw new ArtifactError(
-        'ARTIFACT_SENSITIVE_DATA_DETECTED',
-        `Artifact contains a forbidden discovery-specific value at ${path.join('.')}`,
+      throwSensitive(
+        `Artifact contains a forbidden discovery-specific value at ${path.join('.') || '<root>'}`,
+        path,
       );
     }
 
     if (containsSecretLikeValue(value)) {
-      throw new ArtifactError(
-        'ARTIFACT_SENSITIVE_DATA_DETECTED',
-        `Artifact contains secret-like data at ${path.join('.')}`,
-      );
+      throwSensitive(`Artifact contains secret-like data at ${path.join('.') || '<root>'}`, path);
     }
 
     if (containsRawDom(value)) {
-      throw new ArtifactError(
-        'ARTIFACT_SENSITIVE_DATA_DETECTED',
-        `Artifact contains raw DOM or HTML at ${path.join('.')}`,
+      throwSensitive(`Artifact contains raw DOM or HTML at ${path.join('.') || '<root>'}`, path);
+    }
+
+    if (containsRuntimeHandleValue(value)) {
+      throwSensitive(
+        `Artifact contains browser or runtime handle data at ${path.join('.') || '<root>'}`,
+        path,
+      );
+    }
+
+    if (containsProviderPayloadMarker(value)) {
+      throwSensitive(
+        `Artifact contains a raw model or provider payload at ${path.join('.') || '<root>'}`,
+        path,
       );
     }
 
@@ -146,9 +298,12 @@ function scanValue(
       const normalizedKey = normalizeKey(key);
 
       if (FORBIDDEN_KEY_NAMES.has(normalizedKey)) {
-        throw new ArtifactError(
-          'ARTIFACT_SENSITIVE_DATA_DETECTED',
+        throwSensitive(
           `Artifact contains forbidden field "${key}" at ${path.join('.') || '<root>'}`,
+          path,
+          {
+            field: key,
+          },
         );
       }
 
@@ -158,19 +313,36 @@ function scanValue(
     return;
   }
 
-  if (typeof value === 'function' || typeof value === 'symbol' || typeof value === 'bigint') {
-    throw new ArtifactError(
-      'ARTIFACT_SENSITIVE_DATA_DETECTED',
-      `Artifact contains a non-serializable runtime value at ${path.join('.')}`,
+  /*
+   * Persisted artifacts must remain plain JSON data.
+   *
+   * undefined is rejected too. JSON.stringify would silently discard it,
+   * which is not acceptable for a fail-closed persistence gate.
+   */
+  if (
+    value === undefined ||
+    typeof value === 'function' ||
+    typeof value === 'symbol' ||
+    typeof value === 'bigint'
+  ) {
+    throwSensitive(
+      `Artifact contains a non-serializable runtime value at ${path.join('.') || '<root>'}`,
+      path,
     );
   }
+
+  /*
+   * number and boolean values are normal JSON-compatible artifact values.
+   */
 }
 
 /**
- * Fail-closed security scan for reusable capability artifacts.
+ * Fail-closed final security gate for reusable capability artifacts.
  *
- * This scanner does not redact unsafe values. Compilation must fail so that
- * the compiler can fix parameterization before persistence.
+ * The scanner never sanitizes or redacts persisted artifacts.
+ *
+ * If forbidden content survives parameterization/normalization,
+ * compilation must fail with ARTIFACT_SENSITIVE_DATA_DETECTED.
  */
 export function assertArtifactSafeToPersist(
   value: unknown,
