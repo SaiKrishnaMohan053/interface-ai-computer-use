@@ -115,3 +115,8 @@ export type {
   ParameterizedInputReference,
   ResolvedCompileParameter,
 } from './artifact-parameterizer.js';
+
+export {
+  ArtifactSemanticValidationError,
+  validateCapabilityArtifactSemantics,
+} from './artifact-validator.js';
