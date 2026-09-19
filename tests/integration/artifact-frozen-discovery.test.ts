@@ -1,7 +1,3 @@
-import { readFile } from 'node:fs/promises';
-
-import { join } from 'node:path';
-
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -9,305 +5,17 @@ import {
   parseCapabilityArtifact,
   serializeCapabilityArtifact,
   validateCapabilityArtifactSemantics,
-  type DiscoveryArtifactSource,
 } from '../../src/artifact/index.js';
-
-import {
-  parseDiscoveryRequest,
-  parseDiscoveryRunResult,
-  parseDiscoveryTraceRecord,
-  type DiscoveryExtractionRecord,
-  type DiscoveryTraceRecord,
-} from '../../src/discovery/index.js';
 
 import { createCompileOptions } from '../helpers/artifact-compiler-fixture.js';
 
-const FROZEN_RUN_ID = '9635c0c9-dc3a-4b64-aa38-b1f48a359ea0';
-
-const FROZEN_INPUT = 'Alex Morgan';
-
-const FROZEN_OUTPUT = '$12,840.50';
-
-const FROZEN_ENTRY_URL = 'http://127.0.0.1:49349/member-search';
-
-const evidenceDirectory = join(process.cwd(), 'evidence', 'discovery-success');
-
-interface FrozenRunEnvelope {
-  readonly runId: string;
-
-  readonly mode: string;
-
-  readonly startedAt: string;
-
-  readonly metadata: {
-    readonly policyId: string;
-
-    readonly value: {
-      readonly application: string;
-
-      readonly goal: string;
-
-      readonly maxSteps: number;
-    };
-  };
-}
-
-interface FrozenResultEnvelope {
-  readonly runId: string;
-
-  readonly mode: string;
-
-  readonly status: string;
-
-  readonly startedAt: string;
-
-  readonly finishedAt: string;
-
-  readonly durationMs: number;
-
-  readonly result: {
-    readonly outputs: Record<string, unknown>;
-  };
-
-  readonly evidenceRefs: readonly unknown[];
-}
-
-interface FrozenEvent {
-  readonly timestamp: string;
-
-  readonly runId: string;
-
-  readonly mode: string;
-
-  readonly step: number;
-
-  readonly eventType: string;
-
-  readonly action: {
-    readonly kind?: string;
-
-    readonly destination?: string;
-
-    readonly saveAs?: string;
-  } | null;
-
-  readonly result: Record<string, unknown> | null;
-}
-
-async function readJson<T>(path: string): Promise<T> {
-  return JSON.parse(await readFile(path, 'utf8')) as T;
-}
-
-async function readEvents(): Promise<readonly FrozenEvent[]> {
-  const contents = await readFile(join(evidenceDirectory, 'events.jsonl'), 'utf8');
-
-  return contents
-    .split(/\r?\n/u)
-    .filter((line) => line.trim().length > 0)
-    .map((line) => JSON.parse(line) as FrozenEvent);
-}
-
-function requiredString(value: unknown, description: string): string {
-  if (typeof value !== 'string' || value.length === 0) {
-    throw new Error(`Frozen evidence is missing ${description}`);
-  }
-
-  return value;
-}
-
-function findSessionId(events: readonly FrozenEvent[]): string {
-  for (const event of events) {
-    if (event.eventType !== 'session_lifecycle' || event.result === null) {
-      continue;
-    }
-
-    const sessionId = event.result.sessionId;
-
-    if (typeof sessionId === 'string' && sessionId.length > 0) {
-      return sessionId;
-    }
-  }
-
-  throw new Error('Frozen evidence has no session lifecycle sessionId');
-}
-
-function findEntryUrl(events: readonly FrozenEvent[]): string {
-  for (const event of events) {
-    if (event.action?.kind === 'navigate' && typeof event.action.destination === 'string') {
-      return event.action.destination;
-    }
-  }
-
-  throw new Error('Frozen evidence has no initial navigation URL');
-}
-
-function extractDiscoveryTrace(events: readonly FrozenEvent[]): readonly DiscoveryTraceRecord[] {
-  return events
-    .filter((event) => event.eventType === 'discovery_trace')
-    .map((event) => parseDiscoveryTraceRecord(event.result));
-}
-
-function findReadExtraction(
-  events: readonly FrozenEvent[],
-  trace: readonly DiscoveryTraceRecord[],
-): DiscoveryExtractionRecord {
-  const readDecision = trace.find(
-    (
-      record,
-    ): record is Extract<
-      DiscoveryTraceRecord,
-      {
-        readonly kind: 'model_decision';
-      }
-    > => record.kind === 'model_decision' && record.decision.kind === 'read',
-  );
-
-  if (readDecision === undefined || readDecision.decision.kind !== 'read') {
-    throw new Error('Frozen discovery trace has no read decision');
-  }
-
-  const readResult = trace.find(
-    (
-      record,
-    ): record is Extract<
-      DiscoveryTraceRecord,
-      {
-        readonly kind: 'action_result';
-      }
-    > =>
-      record.kind === 'action_result' &&
-      record.step === readDecision.step &&
-      record.actionKind === 'read' &&
-      record.status === 'success',
-  );
-
-  if (readResult === undefined) {
-    throw new Error('Frozen discovery trace has no successful read result');
-  }
-
-  const observation = trace.find(
-    (
-      record,
-    ): record is Extract<
-      DiscoveryTraceRecord,
-      {
-        readonly kind: 'observation';
-      }
-    > => record.kind === 'observation' && record.step === readDecision.step,
-  );
-
-  if (observation === undefined) {
-    throw new Error('Frozen discovery trace has no read-step observation');
-  }
-
-  const actionEvent = events.find(
-    (event) =>
-      event.eventType === 'action' &&
-      event.step === readDecision.step &&
-      event.action?.kind === 'read' &&
-      event.result !== null,
-  );
-
-  if (actionEvent === undefined || actionEvent.result === null) {
-    throw new Error('Frozen evidence has no successful read action event');
-  }
-
-  const actionId = requiredString(actionEvent.result.actionId, 'read actionId');
-
-  const value = readResult.extractedValues[readDecision.decision.saveAs];
-
-  if (value === undefined) {
-    throw new Error(`Frozen read result has no extracted value "${readDecision.decision.saveAs}"`);
-  }
-
-  return {
-    outputName: readDecision.decision.saveAs,
-
-    value,
-
-    source: 'surface_read',
-
-    step: readDecision.step,
-
-    observationId: observation.observationId,
-
-    actionId,
-  };
-}
-
-async function loadFrozenSource(): Promise<DiscoveryArtifactSource> {
-  const [run, resultEnvelope, events] = await Promise.all([
-    readJson<FrozenRunEnvelope>(join(evidenceDirectory, 'run.json')),
-
-    readJson<FrozenResultEnvelope>(join(evidenceDirectory, 'result.json')),
-
-    readEvents(),
-  ]);
-
-  if (run.runId !== FROZEN_RUN_ID || resultEnvelope.runId !== FROZEN_RUN_ID) {
-    throw new Error('Frozen evidence run ID changed');
-  }
-
-  const trace = extractDiscoveryTrace(events);
-
-  const entryUrl = findEntryUrl(events);
-
-  const request = parseDiscoveryRequest({
-    goal: run.metadata.value.goal,
-
-    target: {
-      entryUrl,
-
-      application: run.metadata.value.application,
-    },
-
-    parameters: {
-      memberName: FROZEN_INPUT,
-    },
-
-    limits: {
-      maxSteps: run.metadata.value.maxSteps,
-    },
-  });
-
-  const highestStep = trace.reduce((highest, record) => Math.max(highest, record.step), 0);
-
-  const result = parseDiscoveryRunResult({
-    runId: resultEnvelope.runId,
-
-    sessionId: findSessionId(events),
-
-    startedAt: resultEnvelope.startedAt,
-
-    finishedAt: resultEnvelope.finishedAt,
-
-    durationMs: resultEnvelope.durationMs,
-
-    evidenceRefs: resultEnvelope.evidenceRefs,
-
-    recoverableConditions: [],
-
-    status: 'success',
-
-    outputs: resultEnvelope.result.outputs,
-
-    steps: highestStep,
-  });
-
-  const extraction = findReadExtraction(events, trace);
-
-  return {
-    runId: run.runId,
-
-    request,
-
-    result,
-
-    trace,
-
-    extractions: [extraction],
-  };
-}
+import {
+  FROZEN_ENTRY_URL,
+  FROZEN_INPUT,
+  FROZEN_OUTPUT,
+  FROZEN_RUN_ID,
+  loadFrozenSource,
+} from '../helpers/frozen-discovery-source.js';
 
 describe('frozen Phase 2 discovery artifact integration', () => {
   it('compiles the genuine Alex Morgan discovery run into lookup_savings_balance v1.0.0', async () => {
@@ -464,6 +172,426 @@ describe('frozen Phase 2 discovery artifact integration', () => {
     expect(artifact.steps.some((step) => step.action.kind === 'navigate')).toBe(false);
 
     const serialized = serializeCapabilityArtifact(artifact);
+
+    expect(serialized).not.toContain('"kind": "complete"');
+  });
+
+  it('verifies the complete reusable content of the real compiled artifact', async () => {
+    const source = await loadFrozenSource();
+
+    const artifact = new ArtifactCompiler().compile(source, createCompileOptions());
+
+    expect(artifact.identity).toMatchObject({
+      id: 'lookup_savings_balance',
+      name: 'Lookup Savings Balance',
+      version: '1.0.0',
+    });
+
+    expect(artifact.inputs).toEqual([
+      {
+        name: 'memberName',
+        type: 'string',
+        required: true,
+        description: 'Member name used for search.',
+        sensitive: true,
+      },
+    ]);
+
+    expect(artifact.outputs).toEqual([
+      {
+        name: 'savingsBalance',
+        type: 'currency',
+        required: true,
+        description: "Current balance of the member's Savings account.",
+      },
+    ]);
+
+    expect(artifact.steps.map((step) => step.id)).toEqual([
+      'enter-member-search',
+      'submit-member-search',
+      'open-accounts',
+      'read-savings-balance',
+    ]);
+
+    const [enterMemberSearch, submitMemberSearch, openAccounts, readSavingsBalance] =
+      artifact.steps;
+
+    expect(enterMemberSearch).toMatchObject({
+      id: 'enter-member-search',
+
+      action: {
+        kind: 'type',
+
+        value: {
+          kind: 'inputRef',
+
+          name: 'memberName',
+        },
+
+        mode: 'replace',
+      },
+
+      target: {
+        description: 'textbox named "Member Name"',
+
+        strategies: [
+          {
+            kind: 'role-name',
+
+            role: 'textbox',
+
+            name: {
+              value: 'Member Name',
+
+              mode: 'exact',
+
+              caseSensitive: false,
+            },
+          },
+        ],
+
+        cardinality: 'exactly-one',
+      },
+
+      preconditions: [
+        {
+          kind: 'elementVisible',
+        },
+      ],
+
+      risk: 'REVERSIBLE',
+    });
+
+    expect(submitMemberSearch).toMatchObject({
+      id: 'submit-member-search',
+
+      action: {
+        kind: 'click',
+      },
+
+      target: {
+        description: 'button named "Search"',
+
+        strategies: [
+          {
+            kind: 'role-name',
+
+            role: 'button',
+
+            name: {
+              value: 'Search',
+
+              mode: 'exact',
+
+              caseSensitive: false,
+            },
+          },
+        ],
+
+        cardinality: 'exactly-one',
+      },
+
+      postconditions: [
+        {
+          kind: 'loadingComplete',
+        },
+
+        {
+          kind: 'textPresent',
+
+          text: 'Member Details',
+
+          match: 'contains',
+
+          caseSensitive: false,
+        },
+      ],
+
+      wait: {
+        timeoutMs: 5_000,
+
+        pollIntervalMs: 100,
+      },
+
+      risk: 'READ_ONLY',
+    });
+
+    expect(openAccounts).toMatchObject({
+      id: 'open-accounts',
+
+      action: {
+        kind: 'click',
+      },
+
+      target: {
+        description: 'link named "Accounts"',
+
+        strategies: [
+          {
+            kind: 'role-name',
+
+            role: 'link',
+
+            name: {
+              value: 'Accounts',
+
+              mode: 'exact',
+
+              caseSensitive: false,
+            },
+          },
+        ],
+
+        cardinality: 'exactly-one',
+      },
+
+      postconditions: [
+        {
+          kind: 'elementVisible',
+        },
+      ],
+
+      wait: {
+        timeoutMs: 5_000,
+
+        pollIntervalMs: 100,
+      },
+
+      risk: 'READ_ONLY',
+    });
+
+    expect(readSavingsBalance).toMatchObject({
+      id: 'read-savings-balance',
+
+      action: {
+        kind: 'read',
+
+        source: 'text',
+
+        saveAs: {
+          kind: 'outputRef',
+
+          name: 'savingsBalance',
+        },
+      },
+
+      target: {
+        strategies: [
+          {
+            kind: 'structural',
+
+            query: {
+              kind: 'table-cell',
+
+              table: {
+                name: {
+                  value: 'Accounts',
+
+                  mode: 'contains',
+
+                  caseSensitive: false,
+                },
+              },
+
+              row: {
+                columnHeader: {
+                  value: 'Account Type',
+
+                  mode: 'exact',
+
+                  caseSensitive: false,
+                },
+
+                value: {
+                  value: 'Savings',
+
+                  mode: 'exact',
+
+                  caseSensitive: false,
+                },
+              },
+
+              column: {
+                header: {
+                  value: 'Current Balance',
+
+                  mode: 'exact',
+
+                  caseSensitive: false,
+                },
+              },
+            },
+          },
+        ],
+
+        cardinality: 'exactly-one',
+      },
+
+      preconditions: [
+        {
+          kind: 'elementVisible',
+        },
+      ],
+
+      risk: 'READ_ONLY',
+    });
+
+    expect(artifact.preconditions).toEqual([
+      {
+        kind: 'textPresent',
+
+        text: 'Member Search',
+
+        match: 'contains',
+
+        caseSensitive: false,
+      },
+    ]);
+
+    expect(artifact.knownBusinessOutcomes).toEqual([
+      {
+        code: 'MEMBER_NOT_FOUND',
+
+        description: 'No member matched the supplied lookup input.',
+
+        detector: {
+          kind: 'textPresent',
+
+          text: 'Member not found',
+
+          match: 'contains',
+
+          caseSensitive: false,
+        },
+      },
+    ]);
+
+    expect(artifact.compatibility).toEqual({
+      application: 'demo-bank',
+
+      vendorFamily: 'demo-core',
+
+      surfaceKind: 'web',
+
+      supportedVersionRange: '1.x',
+    });
+
+    expect(artifact.risk).toEqual({
+      summaryRisk: 'READ_ONLY',
+
+      maxStepRisk: 'REVERSIBLE',
+
+      requiresHumanByDefault: false,
+
+      runtimePolicyRequired: true,
+    });
+
+    expect(artifact.provenance).toEqual({
+      discoveryRunId: FROZEN_RUN_ID,
+
+      compiledAt: '2026-09-18T16:00:00.000Z',
+
+      compilerVersion: '1',
+
+      sourceGoal: 'Look up a member and return their current savings balance.',
+    });
+
+    expect(artifact.successCondition).toMatchObject({
+      kind: 'all',
+
+      conditions: [
+        {
+          kind: 'surface',
+        },
+
+        {
+          kind: 'outputPresent',
+
+          output: {
+            kind: 'outputRef',
+
+            name: 'savingsBalance',
+          },
+        },
+      ],
+    });
+  });
+
+  it('verifies the final serialized artifact contains no discovery or runtime leakage', async () => {
+    const source = await loadFrozenSource();
+
+    const artifact = new ArtifactCompiler().compile(source, createCompileOptions());
+
+    const serialized = serializeCapabilityArtifact(artifact);
+
+    const lower = serialized.toLowerCase();
+
+    const forbiddenExact = [
+      'Alex Morgan',
+      '$12,840.50',
+      'http://127.0.0.1:49349',
+      '49349',
+
+      'c2fcaa85-4097-4d61-a14e-f1c65a1ba77a',
+      '080ad0d3-e322-471f-949d-f07419eab892',
+      '6da1927a-6a9c-4c40-95a6-11604eae9a6e',
+      'bd65fc95-c655-487a-b848-69a4ea55dbca',
+      'e01e65b2-7871-456e-9a97-fda397e348de',
+
+      '99cccfcd-5d5e-4784-ad32-4e6049bd804a',
+      '1c3fe5ea-cd33-405a-aab3-f967cd939931',
+
+      'aab92c93-9e92-41b6-adb1-0d8546bff925',
+    ];
+
+    for (const forbidden of forbiddenExact) {
+      expect(serialized).not.toContain(forbidden);
+    }
+
+    const forbiddenRuntimeOrProviderTerms = [
+      'browsercontext',
+      'elementhandle',
+      'rawmodelresponse',
+      'chainofthought',
+      'modelrationale',
+      'decision rationale',
+      'api key',
+      'apikey',
+      'openai_api_key',
+      'screenshot-0001',
+      'screenshot-0002',
+      'screenshot-0003',
+      'screenshot-0004',
+      'screenshot-0005',
+      'image/png',
+      'application/x-ndjson',
+    ];
+
+    for (const forbidden of forbiddenRuntimeOrProviderTerms) {
+      expect(lower).not.toContain(forbidden.toLowerCase());
+    }
+
+    expect(artifact.provenance).not.toHaveProperty('trace');
+
+    expect(artifact.provenance).not.toHaveProperty('observations');
+
+    expect(artifact.provenance).not.toHaveProperty('decisions');
+
+    expect(artifact.provenance).not.toHaveProperty('reasoning');
+
+    expect(artifact.provenance).not.toHaveProperty('rawModelResponse');
+
+    expect(artifact.provenance).not.toHaveProperty('modelRationale');
+
+    expect(artifact).not.toHaveProperty('screenshots');
+
+    expect(artifact).not.toHaveProperty('trace');
+
+    expect(artifact).not.toHaveProperty('failedRetries');
+
+    expect(artifact).not.toHaveProperty('completionDecision');
+
+    expect(artifact.steps.some((step) => step.action.kind === 'navigate')).toBe(false);
 
     expect(serialized).not.toContain('"kind": "complete"');
   });
