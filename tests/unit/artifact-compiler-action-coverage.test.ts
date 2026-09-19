@@ -288,7 +288,7 @@ describe('ArtifactCompiler action coverage', () => {
     });
 
     expect(step?.target).toMatchObject({
-      description: 'Include closed accounts checkbox',
+      description: 'control labeled "Include closed accounts"',
 
       cardinality: 'exactly-one',
     });
@@ -330,7 +330,7 @@ describe('ArtifactCompiler action coverage', () => {
     });
 
     expect(step?.target).toMatchObject({
-      description: 'Include closed accounts checkbox',
+      description: 'control labeled "Include closed accounts"',
 
       cardinality: 'exactly-one',
     });
