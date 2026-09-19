@@ -17,10 +17,10 @@ Deterministic replay is the next production execution phase. The full human oper
 
 Requirements:
 
-* Node.js 24.x
-* npm
-* Playwright Chromium
-* An OpenAI API key for genuine discovery runs
+- Node.js 24.x
+- npm
+- Playwright Chromium
+- An OpenAI API key for genuine discovery runs
 
 Install:
 
@@ -84,14 +84,14 @@ It is deliberately separate from the discovery trace.
 
 The artifact records:
 
-* Capability identity and version.
-* Typed inputs and outputs.
-* Ordered executable steps.
-* Semantic target specifications.
-* Preconditions, postconditions, and success conditions.
-* Known business outcomes.
-* Risk metadata.
-* Provenance back to the discovery run.
+- Capability identity and version.
+- Typed inputs and outputs.
+- Ordered executable steps.
+- Semantic target specifications.
+- Preconditions, postconditions, and success conditions.
+- Known business outcomes.
+- Risk metadata.
+- Provenance back to the discovery run.
 
 Invocation-specific values such as the discovered member name or returned balance are parameterized instead of being persisted as reusable workflow data.
 
@@ -161,15 +161,15 @@ Get-Content `
 
 From that file alone a reviewer can determine:
 
-* What the capability does.
-* What input it requires.
-* What output it returns.
-* Which steps it performs.
-* How UI targets are identified.
-* Which business outcomes are recognized.
-* What proves successful completion.
-* What risk metadata applies.
-* Which discovery run produced it.
+- What the capability does.
+- What input it requires.
+- What output it returns.
+- Which steps it performs.
+- How UI targets are identified.
+- Which business outcomes are recognized.
+- What proves successful completion.
+- What risk metadata applies.
+- Which discovery run produced it.
 
 ## Run without OpenAI
 
@@ -212,11 +212,11 @@ Only policy-approved actions reach execution.
 
 Additional guarantees include:
 
-* Ambiguous targets are never resolved by choosing the first match.
-* Risk classification is system-authoritative.
-* Discovery execution is bounded by steps, timeout, and repeated-state detection.
-* Artifact persistence performs schema, semantic, and security validation.
-* Secrets, raw model responses, session state, runtime handles, and invocation-specific values are excluded from reusable artifacts.
-* Stored artifacts use deterministic serialization and versioned immutable persistence.
+- Ambiguous targets are never resolved by choosing the first match.
+- Risk classification is system-authoritative.
+- Discovery execution is bounded by steps, timeout, and repeated-state detection.
+- Artifact persistence performs schema, semantic, and security validation.
+- Secrets, raw model responses, session state, runtime handles, and invocation-specific values are excluded from reusable artifacts.
+- Stored artifacts use deterministic serialization and versioned immutable persistence.
 
 See [REPORT.md](./REPORT.md) for the design decisions and deliberate cuts.

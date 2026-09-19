@@ -4,15 +4,15 @@ The system is a TypeScript modular monolith using Node.js, Playwright, Zod, and 
 
 The main boundaries are:
 
-* `DiscoveryEngine` runs the bounded LLM-guided observe, decide, authorize, and act loop.
-* `DiscoveryDecisionModel` isolates LLM participation.
-* `SurfaceAdapter` separates orchestration from concrete UI technology.
-* `PlaywrightSurface` implements browser interaction.
-* `PolicyEngine` performs deterministic authorization.
-* `TargetResolver` resolves ordered semantic targets.
-* `SessionManager` owns the live session and actor ownership.
-* `ArtifactCompiler` converts a successful discovery run into a reusable capability artifact.
-* `ArtifactStore` validates and persists immutable artifact versions.
+- `DiscoveryEngine` runs the bounded LLM-guided observe, decide, authorize, and act loop.
+- `DiscoveryDecisionModel` isolates LLM participation.
+- `SurfaceAdapter` separates orchestration from concrete UI technology.
+- `PlaywrightSurface` implements browser interaction.
+- `PolicyEngine` performs deterministic authorization.
+- `TargetResolver` resolves ordered semantic targets.
+- `SessionManager` owns the live session and actor ownership.
+- `ArtifactCompiler` converts a successful discovery run into a reusable capability artifact.
+- `ArtifactStore` validates and persists immutable artifact versions.
 
 The core separation is:
 
@@ -34,18 +34,18 @@ The artifact contains only the reusable workflow required for future determinist
 
 The artifact includes:
 
-* Stable capability identity and semantic version.
-* Application compatibility metadata.
-* Typed required and optional inputs.
-* Typed outputs.
-* Ordered steps.
-* Semantic target specifications.
-* Preconditions and postconditions.
-* Wait and recovery metadata.
-* Known business outcomes.
-* Success conditions.
-* Risk metadata.
-* Provenance.
+- Stable capability identity and semantic version.
+- Application compatibility metadata.
+- Typed required and optional inputs.
+- Typed outputs.
+- Ordered steps.
+- Semantic target specifications.
+- Preconditions and postconditions.
+- Wait and recovery metadata.
+- Known business outcomes.
+- Success conditions.
+- Risk metadata.
+- Provenance.
 
 Inputs and outputs are explicit contracts. For the example capability:
 
@@ -149,23 +149,23 @@ Only `ALLOW` reaches execution.
 
 Before artifact persistence, the compiler and store enforce:
 
-* Schema validation.
-* Semantic validation.
-* Security validation.
-* Deterministic serialization.
-* Immutable versioned persistence.
+- Schema validation.
+- Semantic validation.
+- Security validation.
+- Deterministic serialization.
+- Immutable versioned persistence.
 
 The persisted artifact excludes:
 
-* API keys and secrets.
-* Cookies and authentication state.
-* Browser or Playwright handles.
-* Raw model responses.
-* Hidden reasoning.
-* Raw DOM state.
-* Session state.
-* Screenshots and trace payloads.
-* Invocation-specific member names and financial values.
+- API keys and secrets.
+- Cookies and authentication state.
+- Browser or Playwright handles.
+- Raw model responses.
+- Hidden reasoning.
+- Raw DOM state.
+- Session state.
+- Screenshots and trace payloads.
+- Invocation-specific member names and financial values.
 
 The artifact retains provenance without retaining the sensitive discovery transcript. The example artifact records the discovery run identifier, compiler version, source goal, and compile timestamp.
 
@@ -186,11 +186,11 @@ natural-language goal
 
 The following remain intentionally deferred:
 
-* Deterministic replay without the LLM.
-* Replay checkpoints and recovery execution.
-* Replay evidence and exceptional-state demonstration.
-* Full human operator UI and production takeover workflow.
-* Cross-tenant specialization and drift management.
-* Artifact approval workflow.
+- Deterministic replay without the LLM.
+- Replay checkpoints and recovery execution.
+- Replay evidence and exceptional-state demonstration.
+- Full human operator UI and production takeover workflow.
+- Cross-tenant specialization and drift management.
+- Artifact approval workflow.
 
 These are deferred at clean architectural boundaries rather than represented as implemented features.
