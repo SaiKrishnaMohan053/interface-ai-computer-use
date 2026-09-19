@@ -84,7 +84,7 @@ describe('artifact target normalization', () => {
       cardinality: 'exactly-one',
     });
 
-    expect(normalized.description).toBe('Accounts navigation');
+    expect(normalized.description).toBe('link named "Accounts"');
 
     expect(normalized.strategies).toHaveLength(1);
 
@@ -300,5 +300,83 @@ describe('artifact target normalization', () => {
     const second = normalizeArtifactTargetSpec(input);
 
     expect(second).toEqual(first);
+  });
+
+  it('derives persisted target description from semantic locator instead of discovery prose', () => {
+    const normalized = normalizeArtifactTargetSpec({
+      description: "the Search button on the Member Search page to look up Alex Morgan's record",
+
+      strategies: [
+        {
+          kind: 'role-name',
+          role: 'button',
+          name: {
+            value: 'Search',
+            mode: 'exact',
+            caseSensitive: false,
+          },
+        },
+      ],
+
+      cardinality: 'exactly-one',
+    });
+
+    expect(normalized.description).toBe('button named "Search"');
+
+    expect(normalized.description).not.toContain('Alex Morgan');
+  });
+
+  it('derives a stable reviewable description for structural table targets', () => {
+    const normalized = normalizeArtifactTargetSpec({
+      description: 'Read savings account current balance for Alex Morgan',
+
+      strategies: [
+        {
+          kind: 'structural',
+
+          query: {
+            kind: 'table-cell',
+
+            table: {
+              name: {
+                value: 'Accounts',
+                mode: 'contains',
+                caseSensitive: false,
+              },
+            },
+
+            row: {
+              columnHeader: {
+                value: 'Account Type',
+                mode: 'exact',
+                caseSensitive: false,
+              },
+
+              value: {
+                value: 'Savings',
+                mode: 'exact',
+                caseSensitive: false,
+              },
+            },
+
+            column: {
+              header: {
+                value: 'Current Balance',
+                mode: 'exact',
+                caseSensitive: false,
+              },
+            },
+          },
+        },
+      ],
+
+      cardinality: 'exactly-one',
+    });
+
+    expect(normalized.description).toBe(
+      'table cell in "Accounts" where "Account Type" equals "Savings" column "Current Balance"',
+    );
+
+    expect(normalized.description).not.toContain('Alex Morgan');
   });
 });

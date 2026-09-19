@@ -21,8 +21,89 @@ export interface NormalizedDiscoveryAction {
   readonly risk: DiscoveryRiskLevel;
 }
 
-function normalizeDescription(value: string): string {
-  return value.trim().replace(/\s+/g, ' ');
+function describeTextMatch(match: TargetTextMatch): string {
+  return `"${normalizeLocatorText(match.value)}"`;
+}
+
+function describeTargetStrategy(strategy: TargetStrategy): string {
+  switch (strategy.kind) {
+    case 'role-name':
+      return `${normalizeLocatorText(strategy.role)} named ${describeTextMatch(strategy.name)}`;
+
+    case 'label':
+      return `control labeled ${describeTextMatch(strategy.label)}`;
+
+    case 'text':
+      return `element with text ${describeTextMatch(strategy.text)}`;
+
+    case 'structural': {
+      switch (strategy.query.kind) {
+        case 'table-cell':
+          return [
+            `table cell in ${describeTextMatch(strategy.query.table.name)}`,
+            `where ${describeTextMatch(strategy.query.row.columnHeader)}`,
+            `equals ${describeTextMatch(strategy.query.row.value)}`,
+            `column ${describeTextMatch(strategy.query.column.header)}`,
+          ].join(' ');
+
+        case 'within': {
+          const containerParts: string[] = [];
+          const targetParts: string[] = [];
+
+          if (strategy.query.container.role !== undefined) {
+            containerParts.push(`role ${normalizeLocatorText(strategy.query.container.role)}`);
+          }
+
+          if (strategy.query.container.name !== undefined) {
+            containerParts.push(`name ${describeTextMatch(strategy.query.container.name)}`);
+          }
+
+          if (strategy.query.container.text !== undefined) {
+            containerParts.push(`text ${describeTextMatch(strategy.query.container.text)}`);
+          }
+
+          if (strategy.query.target.role !== undefined) {
+            targetParts.push(`role ${normalizeLocatorText(strategy.query.target.role)}`);
+          }
+
+          if (strategy.query.target.name !== undefined) {
+            targetParts.push(`name ${describeTextMatch(strategy.query.target.name)}`);
+          }
+
+          if (strategy.query.target.text !== undefined) {
+            targetParts.push(`text ${describeTextMatch(strategy.query.target.text)}`);
+          }
+
+          if (strategy.query.target.zeroBasedIndex !== undefined) {
+            targetParts.push(`index ${strategy.query.target.zeroBasedIndex}`);
+          }
+
+          return `target ${targetParts.join(' ')} within ${containerParts.join(' ')}`;
+        }
+      }
+
+      throw new ArtifactError('ARTIFACT_SOURCE_INVALID', 'Unsupported structural target query');
+    }
+
+    case 'css':
+      return 'CSS-selected target';
+
+    case 'xpath':
+      return 'XPath-selected target';
+  }
+}
+
+function deriveTargetDescription(strategies: readonly TargetStrategy[]): string {
+  const primary = strategies[0];
+
+  if (primary === undefined) {
+    throw new ArtifactError(
+      'ARTIFACT_SOURCE_INVALID',
+      'Artifact target must contain at least one strategy',
+    );
+  }
+
+  return describeTargetStrategy(primary);
 }
 
 function normalizeLocatorText(value: string): string {
@@ -198,7 +279,7 @@ export function normalizeArtifactTargetSpec(value: unknown): TargetSpec {
   }
 
   return targetSpecSchema.parse({
-    description: normalizeDescription(source.description),
+    description: deriveTargetDescription(strategies),
     strategies,
     cardinality: source.cardinality,
   });
