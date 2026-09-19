@@ -50,6 +50,33 @@ export const ARTIFACT_COMPILER_ELIGIBILITY_ERROR_CODES = [
   'UNSAFE_UNRESOLVED_ACTION',
 ] as const;
 
+export const ARTIFACT_COMPILER_UNSUPPORTED_ACTION_KINDS = ['navigate', 'wait', 'dismiss'] as const;
+
+export type ArtifactCompilerUnsupportedActionKind =
+  (typeof ARTIFACT_COMPILER_UNSUPPORTED_ACTION_KINDS)[number];
+
+export class ArtifactCompilerUnsupportedActionError extends ArtifactError {
+  readonly actionKind: ArtifactCompilerUnsupportedActionKind;
+
+  constructor(actionKind: ArtifactCompilerUnsupportedActionKind, reason: string) {
+    super(
+      'ARTIFACT_SOURCE_INVALID',
+      `Discovery action "${actionKind}" cannot be compiled safely: ${reason}`,
+    );
+
+    this.name = 'ArtifactCompilerUnsupportedActionError';
+
+    this.actionKind = actionKind;
+  }
+}
+
+function unsupportedAction(
+  actionKind: ArtifactCompilerUnsupportedActionKind,
+  reason: string,
+): never {
+  throw new ArtifactCompilerUnsupportedActionError(actionKind, reason);
+}
+
 export type ArtifactCompilerEligibilityErrorCode =
   (typeof ARTIFACT_COMPILER_ELIGIBILITY_ERROR_CODES)[number];
 
@@ -404,14 +431,60 @@ function compileAction(
       };
     }
 
-    case 'select':
+    case 'select': {
+      const discoveryOptionValue =
+        decision.option.kind === 'label' ? decision.option.label : decision.option.value;
+
+      const inputRef = resolveStringInputReference(discoveryOptionValue, parameters);
+
+      return {
+        action:
+          decision.option.kind === 'label'
+            ? {
+                kind: 'select',
+                option: {
+                  kind: 'label',
+                  label: capabilityInputBindingSchema.parse(inputRef),
+                },
+              }
+            : {
+                kind: 'select',
+                option: {
+                  kind: 'value',
+                  value: capabilityInputBindingSchema.parse(inputRef),
+                },
+              },
+        target: compileTarget(decision.target),
+      };
+    }
     case 'check':
+      return {
+        action: {
+          kind: 'check',
+        },
+        target: compileTarget(decision.target),
+      };
     case 'uncheck':
+      return {
+        action: {
+          kind: 'uncheck',
+        },
+        target: compileTarget(decision.target),
+      };
     case 'navigate':
+      return unsupportedAction(
+        'navigate',
+        'persisting the discovered destination could capture invocation-specific or runtime-specific navigation state',
+      );
     case 'wait':
+      return unsupportedAction(
+        'wait',
+        'AgentCondition to persisted ConditionSpec compilation has not been proven lossless',
+      );
     case 'dismiss':
-      return sourceInvalid(
-        `Discovery action "${decision.kind}" is not yet supported by ArtifactCompiler`,
+      return unsupportedAction(
+        'dismiss',
+        'discovery dialog identity and surface/native semantics cannot be represented losslessly by the current persisted dismiss action',
       );
 
     case 'complete':

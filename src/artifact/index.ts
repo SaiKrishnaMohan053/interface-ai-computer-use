@@ -83,12 +83,15 @@ export type { ArtifactSecurityScanOptions } from './artifact-security.js';
 export {
   ARTIFACT_COMPILER_ELIGIBILITY_ERROR_CODES,
   ARTIFACT_COMPILER_VERSION,
+  ARTIFACT_COMPILER_UNSUPPORTED_ACTION_KINDS,
+  ArtifactCompilerUnsupportedActionError,
   ArtifactCompiler,
   ArtifactCompilerEligibilityError,
 } from './artifact-compiler.js';
 
 export type {
   ArtifactCompilerEligibilityErrorCode,
+  ArtifactCompilerUnsupportedActionKind,
   CompileOptions,
   CompileOutputBinding,
   CompileStepMetadata,
