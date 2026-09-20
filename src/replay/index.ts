@@ -79,3 +79,23 @@ export type {
   ReplayPolicyGateResult,
   ReplayPolicyIntervention,
 } from './replay-policy-gate.js';
+
+export {
+  replayActionRequiresTarget,
+  resolveReplayStepTarget,
+} from './replay-target-resolution.js';
+
+export type {
+  ReplayTargetResolutionInput,
+  ReplayTargetResolutionResult,
+} from './replay-target-resolution.js';
+
+export {
+  evaluateReplayPreconditions,
+} from './replay-preconditions.js';
+
+export type {
+  ReplayCheckpointFailure,
+  ReplayPreconditionInput,
+  ReplayPreconditionResult,
+} from './replay-preconditions.js';
