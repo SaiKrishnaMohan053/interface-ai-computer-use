@@ -161,3 +161,18 @@ export type {
   ReplayTerminalStateDetectionInput,
   ReplayTerminalStateDetectionResult,
 } from './replay-terminal-state-detector.js';
+
+export { detectReplayApplicationError } from './replay-application-error.js';
+
+export type {
+  ReplayApplicationErrorDetectionInput,
+  ReplayApplicationErrorDetectionResult,
+} from './replay-application-error.js';
+
+export { mapReplayFailure } from './replay-failure-mapper.js';
+
+export type {
+  ReplayFailureMappingInput,
+  ReplayFailurePhase,
+  ReplayMappedFailure,
+} from './replay-failure-mapper.js';
