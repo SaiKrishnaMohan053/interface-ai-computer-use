@@ -44,6 +44,7 @@ export type {
   CapabilityArtifact,
   CapabilityIdentity,
   CapabilityInput,
+  CapabilityValueType,
   CapabilityInputBinding,
   CapabilityOutput,
   CapabilityOutputBinding,
