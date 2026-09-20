@@ -270,3 +270,11 @@ export type {
   ReplayStepExecutionResult,
   ReplaySuccessCheckResult,
 } from './replay-pipeline.js';
+
+export { executePolicyAuthorizedReplayAction } from './replay-policy-execution.js';
+
+export type {
+  ReplayPolicyExecutionDecision,
+  ReplayPolicyExecutionInput,
+  ReplayPolicyExecutionResult,
+} from './replay-policy-execution.js';
