@@ -64,3 +64,18 @@ export type {
   ReplayOrderedStepResult,
   ReplayStepExecutor,
 } from './replay-engine.js';
+
+export {
+  classifyReplayStepRisk,
+  compareReplayRisk,
+  maxReplayRisk,
+} from './replay-risk-classifier.js';
+
+export { evaluateReplayPolicy } from './replay-policy-gate.js';
+
+export type {
+  ReplayPolicyFailure,
+  ReplayPolicyGateInput,
+  ReplayPolicyGateResult,
+  ReplayPolicyIntervention,
+} from './replay-policy-gate.js';
