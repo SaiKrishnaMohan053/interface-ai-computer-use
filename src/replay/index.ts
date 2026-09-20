@@ -295,3 +295,7 @@ export type {
   ReplayRecoveryFlowInput,
   ReplayRecoveryFlowResult,
 } from './replay-recovery-flow.js';
+
+export { ReplayBrowserStepExecutor } from './replay-browser-step-executor.js';
+
+export type { ReplayBrowserStepExecutorOptions } from './replay-browser-step-executor.js';
