@@ -224,3 +224,28 @@ export type {
   ReplaySessionOwnershipResult,
   ReplaySessionOwnershipSnapshot,
 } from './replay-session-ownership.js';
+
+export {
+  REPLAY_EVIDENCE_EVENT_TYPES,
+  recordReplayEvidence,
+  sanitizeReplayEvidenceDetails,
+  sanitizeReplayEvidenceValue,
+} from './replay-evidence.js';
+
+export type {
+  RecordReplayEvidenceInput,
+  ReplayEvidenceEvent,
+  ReplayEvidenceEventType,
+  ReplayEvidenceSink,
+} from './replay-evidence.js';
+
+export {
+  captureReplayFailureEvidence,
+  summarizeReplayFailureObservation,
+} from './replay-failure-evidence.js';
+
+export type {
+  ReplayFailureEvidenceInput,
+  ReplayFailureEvidenceResult,
+  ReplayFailureStateSummary,
+} from './replay-failure-evidence.js';
