@@ -278,3 +278,12 @@ export type {
   ReplayPolicyExecutionInput,
   ReplayPolicyExecutionResult,
 } from './replay-policy-execution.js';
+
+export { executeReplayCheckpointFlow } from './replay-checkpoint-flow.js';
+
+export type {
+  ReplayCheckpointBusinessOutcomeDetectionResult,
+  ReplayCheckpointFlowInput,
+  ReplayCheckpointFlowResult,
+  ReplayCheckpointResult,
+} from './replay-checkpoint-flow.js';
