@@ -118,3 +118,22 @@ export type {
   ReplaySuccessConditionFailure,
   ReplaySuccessConditionResult,
 } from './replay-success-condition.js';
+
+export {
+  detectReplayBusinessOutcome,
+} from './replay-business-outcome-detector.js';
+
+export type {
+  ReplayBusinessOutcomeDetectionInput,
+  ReplayBusinessOutcomeDetectionResult,
+  ReplayDetectedBusinessOutcome,
+} from './replay-business-outcome-detector.js';
+
+export {
+  classifyReplayRuntimeSignal,
+} from './replay-runtime-classifier.js';
+
+export type {
+  ReplayRuntimeClassification,
+  ReplayRuntimeSignal,
+} from './replay-runtime-classifier.js';
