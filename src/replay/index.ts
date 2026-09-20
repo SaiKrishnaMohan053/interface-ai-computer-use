@@ -99,9 +99,7 @@ export { evaluateReplayWait } from './replay-wait.js';
 
 export type { ReplayWaitFailure, ReplayWaitInput, ReplayWaitResult } from './replay-wait.js';
 
-export {
-  evaluateReplayPostconditions,
-} from './replay-postconditions.js';
+export { evaluateReplayPostconditions } from './replay-postconditions.js';
 
 export type {
   ReplayCheckpointExplanation,
@@ -110,18 +108,14 @@ export type {
   ReplayPostconditionResult,
 } from './replay-postconditions.js';
 
-export {
-  evaluateReplaySuccessCondition,
-} from './replay-success-condition.js';
+export { evaluateReplaySuccessCondition } from './replay-success-condition.js';
 
 export type {
   ReplaySuccessConditionFailure,
   ReplaySuccessConditionResult,
 } from './replay-success-condition.js';
 
-export {
-  detectReplayBusinessOutcome,
-} from './replay-business-outcome-detector.js';
+export { detectReplayBusinessOutcome } from './replay-business-outcome-detector.js';
 
 export type {
   ReplayBusinessOutcomeDetectionInput,
@@ -129,18 +123,14 @@ export type {
   ReplayDetectedBusinessOutcome,
 } from './replay-business-outcome-detector.js';
 
-export {
-  classifyReplayRuntimeSignal,
-} from './replay-runtime-classifier.js';
+export { classifyReplayRuntimeSignal } from './replay-runtime-classifier.js';
 
 export type {
   ReplayRuntimeClassification,
   ReplayRuntimeSignal,
 } from './replay-runtime-classifier.js';
 
-export {
-  executeReplayRecovery,
-} from './replay-recovery.js';
+export { executeReplayRecovery } from './replay-recovery.js';
 
 export type {
   ReplayRecoveryAttemptRecord,
@@ -148,3 +138,19 @@ export type {
   ReplayRecoveryResult,
   ReplayRecoveryRetryResult,
 } from './replay-recovery.js';
+
+export { executeReplayDialogRecovery } from './replay-dialog-recovery.js';
+
+export type {
+  ReplayDialogRecoveryAttempt,
+  ReplayDialogRecoveryInput,
+  ReplayDialogRecoveryResult,
+} from './replay-dialog-recovery.js';
+
+export { ReplayRecoveryBudget } from './replay-recovery-budget.js';
+
+export type {
+  ReplayRecoveryBudgetCheck,
+  ReplayRecoveryBudgetLimits,
+  ReplayRecoveryBudgetSnapshot,
+} from './replay-recovery-budget.js';
