@@ -258,3 +258,15 @@ export type {
   ReplayCliIo,
   ReplayCliOptions,
 } from './replay-cli.js';
+
+export { executeReplayPipeline } from './replay-pipeline.js';
+
+export type {
+  ReplayInputValidationResult,
+  ReplayPipelineDependencies,
+  ReplayPipelineFailureCode,
+  ReplayPipelineRequest,
+  ReplayPipelineResult,
+  ReplayStepExecutionResult,
+  ReplaySuccessCheckResult,
+} from './replay-pipeline.js';
