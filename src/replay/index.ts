@@ -54,3 +54,13 @@ export type {
   ReplayOutputStoreError,
   ReplayOutputStoreResult,
 } from './output-store.js';
+
+export { ReplayEngine } from './replay-engine.js';
+
+export type {
+  ReplayEngineDependencies,
+  ReplayExecutionContext,
+  ReplayOrderedExecutionResult,
+  ReplayOrderedStepResult,
+  ReplayStepExecutor,
+} from './replay-engine.js';
