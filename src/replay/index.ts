@@ -38,3 +38,19 @@ export type {
 export { prepareReplayInvocation } from './replay-preparation.js';
 
 export type { ReplayPreparationResult } from './replay-preparation.js';
+
+export { resolveReplayInputBinding, resolveReplayStringInputBinding } from './input-binder.js';
+
+export type {
+  ReplayInputBindingError,
+  ReplayInputBindingResult,
+  ReplayStringInputBindingResult,
+} from './input-binder.js';
+
+export { ReplayOutputStore } from './output-store.js';
+
+export type {
+  ReplayOutputFinalizationResult,
+  ReplayOutputStoreError,
+  ReplayOutputStoreResult,
+} from './output-store.js';
