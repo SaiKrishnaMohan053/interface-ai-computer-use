@@ -193,3 +193,34 @@ export type {
   ReplayExecutionStateSnapshot,
   ReplayObservedState,
 } from './replay-run-state.js';
+
+export { ReplayRunTimeoutGuard } from './replay-run-timeout.js';
+
+export type {
+  ReplayRunTimeoutFailure,
+  ReplayRunTimeoutGuardOptions,
+  ReplayRunTimeoutLimits,
+  ReplayRunTimeoutSnapshot,
+} from './replay-run-timeout.js';
+
+export { enforceReplayRunTimeout } from './replay-timeout-lifecycle.js';
+
+export type {
+  ReplayTimeoutLifecycleInput,
+  ReplayTimeoutLifecycleResult,
+} from './replay-timeout-lifecycle.js';
+
+export {
+  checkReplaySessionOwnership,
+  isReplayOwnershipError,
+  replayOwnershipFailure,
+} from './replay-session-ownership.js';
+
+export type {
+  ReplayOwnershipFailure,
+  ReplaySessionOwnershipAllowed,
+  ReplaySessionOwnershipBlocked,
+  ReplaySessionOwnershipBlockReason,
+  ReplaySessionOwnershipResult,
+  ReplaySessionOwnershipSnapshot,
+} from './replay-session-ownership.js';
