@@ -137,3 +137,14 @@ export type {
   ReplayRuntimeClassification,
   ReplayRuntimeSignal,
 } from './replay-runtime-classifier.js';
+
+export {
+  executeReplayRecovery,
+} from './replay-recovery.js';
+
+export type {
+  ReplayRecoveryAttemptRecord,
+  ReplayRecoveryInput,
+  ReplayRecoveryResult,
+  ReplayRecoveryRetryResult,
+} from './replay-recovery.js';
