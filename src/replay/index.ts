@@ -154,3 +154,10 @@ export type {
   ReplayRecoveryBudgetLimits,
   ReplayRecoveryBudgetSnapshot,
 } from './replay-recovery-budget.js';
+
+export { detectReplayTerminalState } from './replay-terminal-state-detector.js';
+
+export type {
+  ReplayTerminalStateDetectionInput,
+  ReplayTerminalStateDetectionResult,
+} from './replay-terminal-state-detector.js';
