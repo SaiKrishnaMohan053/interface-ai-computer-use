@@ -176,3 +176,20 @@ export type {
   ReplayFailurePhase,
   ReplayMappedFailure,
 } from './replay-failure-mapper.js';
+
+export { extractReplayOutput } from './replay-output-extraction.js';
+
+export type {
+  ReplayOutputExtractionFailure,
+  ReplayOutputExtractionInput,
+  ReplayOutputExtractionResult,
+  ReplayOutputExtractionSuccess,
+} from './replay-output-extraction.js';
+
+export { ReplayExecutionState } from './replay-run-state.js';
+
+export type {
+  ReplayExecutionStateOptions,
+  ReplayExecutionStateSnapshot,
+  ReplayObservedState,
+} from './replay-run-state.js';
