@@ -249,3 +249,12 @@ export type {
   ReplayFailureEvidenceResult,
   ReplayFailureStateSummary,
 } from './replay-failure-evidence.js';
+
+export { parseReplayCliArgs, runReplayCli, ReplayCliArgumentError } from './replay-cli.js';
+
+export type {
+  ReplayCliDependencies,
+  ReplayCliExecutionResult,
+  ReplayCliIo,
+  ReplayCliOptions,
+} from './replay-cli.js';
