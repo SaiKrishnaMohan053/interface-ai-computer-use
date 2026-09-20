@@ -80,22 +80,21 @@ export type {
   ReplayPolicyIntervention,
 } from './replay-policy-gate.js';
 
-export {
-  replayActionRequiresTarget,
-  resolveReplayStepTarget,
-} from './replay-target-resolution.js';
+export { replayActionRequiresTarget, resolveReplayStepTarget } from './replay-target-resolution.js';
 
 export type {
   ReplayTargetResolutionInput,
   ReplayTargetResolutionResult,
 } from './replay-target-resolution.js';
 
-export {
-  evaluateReplayPreconditions,
-} from './replay-preconditions.js';
+export { evaluateReplayPreconditions } from './replay-preconditions.js';
 
 export type {
   ReplayCheckpointFailure,
   ReplayPreconditionInput,
   ReplayPreconditionResult,
 } from './replay-preconditions.js';
+
+export { evaluateReplayWait } from './replay-wait.js';
+
+export type { ReplayWaitFailure, ReplayWaitInput, ReplayWaitResult } from './replay-wait.js';

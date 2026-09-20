@@ -393,4 +393,28 @@ describe('validateCapabilityArtifactSemantics', () => {
 
     expectSemanticFailure(invalid, 'at least one reusable step');
   });
+
+  it('rejects an explicit wait action without a bounded wait policy', () => {
+    const artifact = validArtifact();
+
+    artifact.steps = [
+      {
+        id: 'wait-for-loading',
+        description: 'Wait for loading.',
+
+        action: {
+          kind: 'wait',
+          condition: {
+            kind: 'loadingComplete',
+          },
+        },
+
+        risk: 'READ_ONLY',
+      },
+    ];
+
+    expect(() => validateCapabilityArtifactSemantics(artifact)).toThrow(
+      /requires an explicit bounded wait policy/,
+    );
+  });
 });

@@ -279,6 +279,17 @@ function validateReusableSteps(artifact: CapabilityArtifact): void {
   }
 }
 
+function validateWaitPolicies(artifact: CapabilityArtifact): void {
+  for (const step of artifact.steps) {
+    if (step.action.kind === 'wait' && step.wait === undefined) {
+      semanticInvalid(`Wait step "${step.id}" requires an explicit bounded wait policy`, {
+        stepId: step.id,
+        actionKind: step.action.kind,
+      });
+    }
+  }
+}
+
 /**
  * Validates cross-field semantic
  * invariants after structural Zod
@@ -331,6 +342,8 @@ export function validateCapabilityArtifactSemantics(
   validateKnownBusinessOutcomes(artifact);
 
   validateRecoveryRules(artifact);
+
+  validateWaitPolicies(artifact);
 
   validateRiskMetadata(artifact);
 
