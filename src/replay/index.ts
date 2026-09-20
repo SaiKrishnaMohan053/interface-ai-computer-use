@@ -98,3 +98,23 @@ export type {
 export { evaluateReplayWait } from './replay-wait.js';
 
 export type { ReplayWaitFailure, ReplayWaitInput, ReplayWaitResult } from './replay-wait.js';
+
+export {
+  evaluateReplayPostconditions,
+} from './replay-postconditions.js';
+
+export type {
+  ReplayCheckpointExplanation,
+  ReplayPostconditionFailure,
+  ReplayPostconditionInput,
+  ReplayPostconditionResult,
+} from './replay-postconditions.js';
+
+export {
+  evaluateReplaySuccessCondition,
+} from './replay-success-condition.js';
+
+export type {
+  ReplaySuccessConditionFailure,
+  ReplaySuccessConditionResult,
+} from './replay-success-condition.js';
