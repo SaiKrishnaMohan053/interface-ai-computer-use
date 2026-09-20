@@ -287,3 +287,11 @@ export type {
   ReplayCheckpointFlowResult,
   ReplayCheckpointResult,
 } from './replay-checkpoint-flow.js';
+
+export { executeReplayRecoveryFlow } from './replay-recovery-flow.js';
+
+export type {
+  ReplayRecoveryAttemptResult,
+  ReplayRecoveryFlowInput,
+  ReplayRecoveryFlowResult,
+} from './replay-recovery-flow.js';
