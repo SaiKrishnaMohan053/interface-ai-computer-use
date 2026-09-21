@@ -1,6 +1,4 @@
-import type {
-  CapabilityStep,
-} from '../artifact/index.js';
+import type { CapabilityStep } from '../artifact/index.js';
 
 import type {
   JsonValue,
@@ -9,14 +7,9 @@ import type {
   SurfaceFailure,
 } from '../surface/index.js';
 
-import {
-  TargetResolver,
-} from '../targeting/index.js';
+import { TargetResolver } from '../targeting/index.js';
 
-import type {
-  TargetResolutionAttempt,
-  TargetStrategy,
-} from '../targeting/index.js';
+import type { TargetResolutionAttempt, TargetStrategy } from '../targeting/index.js';
 
 export type ReplayTargetResolutionResult =
   | {
@@ -38,9 +31,7 @@ export interface ReplayTargetResolutionInput {
   readonly signal?: AbortSignal;
 }
 
-export function replayActionRequiresTarget(
-  step: Pick<CapabilityStep, 'action'>,
-): boolean {
+export function replayActionRequiresTarget(step: Pick<CapabilityStep, 'action'>): boolean {
   switch (step.action.kind) {
     case 'click':
     case 'type':

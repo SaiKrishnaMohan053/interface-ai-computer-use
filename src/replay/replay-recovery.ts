@@ -1,16 +1,8 @@
-import type {
-  CapabilityStep,
-  RecoveryPolicy,
-  WaitPolicy,
-} from '../artifact/index.js';
+import type { CapabilityStep, RecoveryPolicy, WaitPolicy } from '../artifact/index.js';
 
-import type {
-  RecoverableCondition,
-} from '../runtime/index.js';
+import type { RecoverableCondition } from '../runtime/index.js';
 
-import type {
-  JsonValue,
-} from '../surface/index.js';
+import type { JsonValue } from '../surface/index.js';
 
 const DEFAULT_RECOVERY_WAIT: WaitPolicy = {
   timeoutMs: 5_000,
@@ -23,14 +15,8 @@ export interface ReplayRecoveryAttemptRecord {
   readonly recoveryKind: RecoveryPolicy['kind'];
   readonly attempt: number;
   readonly maxAttempts: number;
-  readonly outcome:
-    | 'started'
-    | 'recovered'
-    | 'retry_failed'
-    | 'exhausted';
-  readonly details: Readonly<
-    Record<string, JsonValue>
-  >;
+  readonly outcome: 'started' | 'recovered' | 'retry_failed' | 'exhausted';
+  readonly details: Readonly<Record<string, JsonValue>>;
 }
 
 export type ReplayRecoveryRetryResult =
@@ -45,9 +31,7 @@ export type ReplayRecoveryRetryResult =
       readonly status: 'failure';
       readonly code: string;
       readonly message: string;
-      readonly details?: Readonly<
-        Record<string, JsonValue>
-      >;
+      readonly details?: Readonly<Record<string, JsonValue>>;
     };
 
 export type ReplayRecoveryResult =
@@ -59,18 +43,14 @@ export type ReplayRecoveryResult =
   | {
       readonly status: 'not_authorized';
       readonly condition: RecoverableCondition;
-      readonly reason:
-        | 'NO_RECOVERY_METADATA'
-        | 'NO_MATCHING_RECOVERY_POLICY';
+      readonly reason: 'NO_RECOVERY_METADATA' | 'NO_MATCHING_RECOVERY_POLICY';
     }
   | {
       readonly status: 'intervention_required';
       readonly intervention: {
         readonly code: 'RECOVERY_EXHAUSTED';
         readonly message: string;
-        readonly details: Readonly<
-          Record<string, JsonValue>
-        >;
+        readonly details: Readonly<Record<string, JsonValue>>;
       };
     }
   | {
@@ -78,9 +58,7 @@ export type ReplayRecoveryResult =
       readonly error: {
         readonly code: string;
         readonly message: string;
-        readonly details: Readonly<
-          Record<string, JsonValue>
-        >;
+        readonly details: Readonly<Record<string, JsonValue>>;
       };
     };
 
@@ -95,26 +73,19 @@ export interface ReplayRecoveryInput {
    * such as ConditionEvaluator. This recovery layer never sleeps
    * arbitrarily.
    */
-  readonly waitBeforeRetry: (
-    wait: WaitPolicy,
-    attempt: number,
-  ) => Promise<void>;
+  readonly waitBeforeRetry: (wait: WaitPolicy, attempt: number) => Promise<void>;
 
   /**
    * Re-executes only the explicitly allowed step/checkpoint.
    * It must not invent another action or workflow.
    */
-  readonly retry: (
-    attempt: number,
-  ) => Promise<ReplayRecoveryRetryResult>;
+  readonly retry: (attempt: number) => Promise<ReplayRecoveryRetryResult>;
 
   /**
    * The ReplayStepExecutor will wire this to EvidenceRecorder.
    * Every attempted recovery passes through this callback.
    */
-  readonly recordAttempt: (
-    record: ReplayRecoveryAttemptRecord,
-  ) => Promise<void>;
+  readonly recordAttempt: (record: ReplayRecoveryAttemptRecord) => Promise<void>;
 }
 
 function matchingPolicy(
@@ -123,25 +94,15 @@ function matchingPolicy(
 ): RecoveryPolicy | undefined {
   const recovery = step.recovery;
 
-  if (
-    recovery === undefined ||
-    recovery.length === 0
-  ) {
+  if (recovery === undefined || recovery.length === 0) {
     return undefined;
   }
 
   switch (condition.code) {
     case 'TRANSIENT_LOAD':
       return recovery.find(
-        (
-          policy,
-        ): policy is Extract<
-          RecoveryPolicy,
-          { readonly kind: 'retry' }
-        > =>
-          policy.kind === 'retry' &&
-          policy.condition ===
-            'TRANSIENT_LOAD',
+        (policy): policy is Extract<RecoveryPolicy, { readonly kind: 'retry' }> =>
+          policy.kind === 'retry' && policy.condition === 'TRANSIENT_LOAD',
       );
 
     case 'KNOWN_INTERSTITIAL':
@@ -151,14 +112,9 @@ function matchingPolicy(
         ): policy is Extract<
           RecoveryPolicy,
           {
-            readonly kind:
-              'dismissKnownDialog';
+            readonly kind: 'dismissKnownDialog';
           }
-        > =>
-          policy.kind ===
-            'dismissKnownDialog' &&
-          policy.condition ===
-            'KNOWN_INTERSTITIAL',
+        > => policy.kind === 'dismissKnownDialog' && policy.condition === 'KNOWN_INTERSTITIAL',
       );
 
     /*
@@ -172,21 +128,13 @@ function matchingPolicy(
 
 async function executeTransientLoadRecovery(
   input: ReplayRecoveryInput,
-  policy: Extract<
-    RecoveryPolicy,
-    { readonly kind: 'retry' }
-  >,
+  policy: Extract<RecoveryPolicy, { readonly kind: 'retry' }>,
 ): Promise<ReplayRecoveryResult> {
-  const wait =
-    policy.wait ?? DEFAULT_RECOVERY_WAIT;
+  const wait = policy.wait ?? DEFAULT_RECOVERY_WAIT;
 
   let currentCondition = input.condition;
 
-  for (
-    let attempt = 1;
-    attempt <= policy.maxAttempts;
-    attempt += 1
-  ) {
+  for (let attempt = 1; attempt <= policy.maxAttempts; attempt += 1) {
     await input.recordAttempt({
       stepId: input.step.id,
       conditionCode: currentCondition.code,
@@ -196,28 +144,21 @@ async function executeTransientLoadRecovery(
       outcome: 'started',
       details: {
         waitTimeoutMs: wait.timeoutMs,
-        pollIntervalMs:
-          wait.pollIntervalMs,
+        pollIntervalMs: wait.pollIntervalMs,
       },
     });
 
-    await input.waitBeforeRetry(
-      wait,
-      attempt,
-    );
+    await input.waitBeforeRetry(wait, attempt);
 
-    const result =
-      await input.retry(attempt);
+    const result = await input.retry(attempt);
 
     if (result.status === 'recovered') {
       await input.recordAttempt({
         stepId: input.step.id,
-        conditionCode:
-          currentCondition.code,
+        conditionCode: currentCondition.code,
         recoveryKind: policy.kind,
         attempt,
-        maxAttempts:
-          policy.maxAttempts,
+        maxAttempts: policy.maxAttempts,
         outcome: 'recovered',
         details: {},
       });
@@ -232,12 +173,10 @@ async function executeTransientLoadRecovery(
     if (result.status === 'failure') {
       await input.recordAttempt({
         stepId: input.step.id,
-        conditionCode:
-          currentCondition.code,
+        conditionCode: currentCondition.code,
         recoveryKind: policy.kind,
         attempt,
-        maxAttempts:
-          policy.maxAttempts,
+        maxAttempts: policy.maxAttempts,
         outcome: 'retry_failed',
         details: {
           failureCode: result.code,
@@ -249,8 +188,7 @@ async function executeTransientLoadRecovery(
         error: {
           code: result.code,
           message: result.message,
-          details:
-            result.details ?? {},
+          details: result.details ?? {},
         },
       };
     }
@@ -260,12 +198,10 @@ async function executeTransientLoadRecovery(
     if (attempt === policy.maxAttempts) {
       await input.recordAttempt({
         stepId: input.step.id,
-        conditionCode:
-          currentCondition.code,
+        conditionCode: currentCondition.code,
         recoveryKind: policy.kind,
         attempt,
-        maxAttempts:
-          policy.maxAttempts,
+        maxAttempts: policy.maxAttempts,
         outcome: 'exhausted',
         details: {},
       });
@@ -278,16 +214,13 @@ async function executeTransientLoadRecovery(
     intervention: {
       code: 'RECOVERY_EXHAUSTED',
 
-      message:
-        `Recovery attempts were exhausted for step "${input.step.id}".`,
+      message: `Recovery attempts were exhausted for step "${input.step.id}".`,
 
       details: {
         stepId: input.step.id,
-        conditionCode:
-          currentCondition.code,
+        conditionCode: currentCondition.code,
         recoveryKind: policy.kind,
-        maxAttempts:
-          policy.maxAttempts,
+        maxAttempts: policy.maxAttempts,
       },
     },
   };
@@ -298,8 +231,7 @@ async function executeKnownInterstitialRecovery(
   policy: Extract<
     RecoveryPolicy,
     {
-      readonly kind:
-        'dismissKnownDialog';
+      readonly kind: 'dismissKnownDialog';
     }
   >,
 ): Promise<ReplayRecoveryResult> {
@@ -320,14 +252,12 @@ async function executeKnownInterstitialRecovery(
     details: {},
   });
 
-  const result =
-    await input.retry(attempt);
+  const result = await input.retry(attempt);
 
   if (result.status === 'recovered') {
     await input.recordAttempt({
       stepId: input.step.id,
-      conditionCode:
-        input.condition.code,
+      conditionCode: input.condition.code,
       recoveryKind: policy.kind,
       attempt,
       maxAttempts: 1,
@@ -345,8 +275,7 @@ async function executeKnownInterstitialRecovery(
   if (result.status === 'failure') {
     await input.recordAttempt({
       stepId: input.step.id,
-      conditionCode:
-        input.condition.code,
+      conditionCode: input.condition.code,
       recoveryKind: policy.kind,
       attempt,
       maxAttempts: 1,
@@ -362,16 +291,14 @@ async function executeKnownInterstitialRecovery(
       error: {
         code: result.code,
         message: result.message,
-        details:
-          result.details ?? {},
+        details: result.details ?? {},
       },
     };
   }
 
   await input.recordAttempt({
     stepId: input.step.id,
-    conditionCode:
-      result.condition.code,
+    conditionCode: result.condition.code,
     recoveryKind: policy.kind,
     attempt,
     maxAttempts: 1,
@@ -385,13 +312,11 @@ async function executeKnownInterstitialRecovery(
     intervention: {
       code: 'RECOVERY_EXHAUSTED',
 
-      message:
-        `Known interstitial recovery was exhausted for step "${input.step.id}".`,
+      message: `Known interstitial recovery was exhausted for step "${input.step.id}".`,
 
       details: {
         stepId: input.step.id,
-        conditionCode:
-          result.condition.code,
+        conditionCode: result.condition.code,
         recoveryKind: policy.kind,
         maxAttempts: 1,
       },
@@ -404,10 +329,7 @@ export async function executeReplayRecovery(
 ): Promise<ReplayRecoveryResult> {
   const recovery = input.step.recovery;
 
-  if (
-    recovery === undefined ||
-    recovery.length === 0
-  ) {
+  if (recovery === undefined || recovery.length === 0) {
     return {
       status: 'not_authorized',
       condition: input.condition,
@@ -415,31 +337,21 @@ export async function executeReplayRecovery(
     };
   }
 
-  const policy = matchingPolicy(
-    input.step,
-    input.condition,
-  );
+  const policy = matchingPolicy(input.step, input.condition);
 
   if (policy === undefined) {
     return {
       status: 'not_authorized',
       condition: input.condition,
-      reason:
-        'NO_MATCHING_RECOVERY_POLICY',
+      reason: 'NO_MATCHING_RECOVERY_POLICY',
     };
   }
 
   switch (policy.kind) {
     case 'retry':
-      return executeTransientLoadRecovery(
-        input,
-        policy,
-      );
+      return executeTransientLoadRecovery(input, policy);
 
     case 'dismissKnownDialog':
-      return executeKnownInterstitialRecovery(
-        input,
-        policy,
-      );
+      return executeKnownInterstitialRecovery(input, policy);
   }
 }

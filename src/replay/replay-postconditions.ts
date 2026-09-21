@@ -1,15 +1,8 @@
 import { ConditionEvaluator } from '../conditions/index.js';
 
-import type {
-  CapabilityStep,
-  WaitPolicy,
-} from '../artifact/index.js';
+import type { CapabilityStep, WaitPolicy } from '../artifact/index.js';
 
-import type {
-  EvidenceReference,
-  JsonValue,
-  SurfaceAdapter,
-} from '../surface/index.js';
+import type { EvidenceReference, JsonValue, SurfaceAdapter } from '../surface/index.js';
 
 import type { TargetStrategy } from '../targeting/index.js';
 
@@ -53,10 +46,7 @@ export type ReplayPostconditionResult =
     }
   | {
       readonly status: 'recoverable';
-      readonly condition: Extract<
-        ReplayCheckpointExplanation,
-        { readonly status: 'recoverable' }
-      >;
+      readonly condition: Extract<ReplayCheckpointExplanation, { readonly status: 'recoverable' }>;
       readonly evidenceRefs: readonly EvidenceReference[];
     }
   | {
@@ -91,9 +81,7 @@ function failure(
       stepId: step.id,
       conditionIndex,
       reason,
-      ...(underlyingErrorCode === undefined
-        ? {}
-        : { underlyingErrorCode }),
+      ...(underlyingErrorCode === undefined ? {} : { underlyingErrorCode }),
     },
   };
 }
@@ -103,10 +91,7 @@ export async function evaluateReplayPostconditions(
 ): Promise<ReplayPostconditionResult> {
   const postconditions = input.step.postconditions;
 
-  if (
-    postconditions === undefined ||
-    postconditions.length === 0
-  ) {
+  if (postconditions === undefined || postconditions.length === 0) {
     return {
       status: 'passed',
       evidenceRefs: [],
@@ -116,14 +101,9 @@ export async function evaluateReplayPostconditions(
   const evaluator = new ConditionEvaluator(input.adapter);
   const evidenceRefs: EvidenceReference[] = [];
 
-  const wait =
-    input.step.wait ?? input.defaultWait;
+  const wait = input.step.wait ?? input.defaultWait;
 
-  for (
-    let conditionIndex = 0;
-    conditionIndex < postconditions.length;
-    conditionIndex += 1
-  ) {
+  for (let conditionIndex = 0; conditionIndex < postconditions.length; conditionIndex += 1) {
     const condition = postconditions[conditionIndex];
 
     if (condition === undefined) {
@@ -140,8 +120,7 @@ export async function evaluateReplayPostconditions(
       };
     }
 
-    const conditionId =
-      `${input.step.id}:postcondition:${conditionIndex}`;
+    const conditionId = `${input.step.id}:postcondition:${conditionIndex}`;
 
     const result = await evaluator.evaluate(
       {
@@ -151,9 +130,7 @@ export async function evaluateReplayPostconditions(
       {
         timeoutMs: wait.timeoutMs,
         pollIntervalMs: wait.pollIntervalMs,
-        ...(input.signal === undefined
-          ? {}
-          : { signal: input.signal }),
+        ...(input.signal === undefined ? {} : { signal: input.signal }),
       },
     );
 
@@ -167,8 +144,7 @@ export async function evaluateReplayPostconditions(
      * A failed checkpoint may be explained by a known
      * business outcome or recoverable runtime state.
      */
-    const explanation =
-      await input.detectCurrentState();
+    const explanation = await input.detectCurrentState();
 
     if (explanation.status === 'business_outcome') {
       return {
@@ -194,9 +170,7 @@ export async function evaluateReplayPostconditions(
           conditionIndex,
           result.expected,
           result.observed,
-          result.reason === 'timeout'
-            ? 'POSTCONDITION_TIMEOUT'
-            : 'POSTCONDITION_MISMATCH',
+          result.reason === 'timeout' ? 'POSTCONDITION_TIMEOUT' : 'POSTCONDITION_MISMATCH',
         ),
         evidenceRefs,
       };

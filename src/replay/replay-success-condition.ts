@@ -1,15 +1,8 @@
 import { ConditionEvaluator } from '../conditions/index.js';
 
-import type {
-  ArtifactSuccessCondition,
-  WaitPolicy,
-} from '../artifact/index.js';
+import type { ArtifactSuccessCondition, WaitPolicy } from '../artifact/index.js';
 
-import type {
-  EvidenceReference,
-  JsonValue,
-  SurfaceAdapter,
-} from '../surface/index.js';
+import type { EvidenceReference, JsonValue, SurfaceAdapter } from '../surface/index.js';
 
 import type { TargetStrategy } from '../targeting/index.js';
 
@@ -52,18 +45,14 @@ async function evaluateLeaf(
   condition: Extract<
     ArtifactSuccessCondition,
     {
-      readonly kind:
-        | 'surface'
-        | 'outputPresent';
+      readonly kind: 'surface' | 'outputPresent';
     }
   >,
   context: EvaluateContext,
   path: string,
 ): Promise<NodeResult> {
   if (condition.kind === 'outputPresent') {
-    const present = context.outputStore.has(
-      condition.output.name,
-    );
+    const present = context.outputStore.has(condition.output.name);
 
     return {
       passed: present,
@@ -73,9 +62,7 @@ async function evaluateLeaf(
     };
   }
 
-  const evaluator = new ConditionEvaluator(
-    context.adapter,
-  );
+  const evaluator = new ConditionEvaluator(context.adapter);
 
   const result = await evaluator.evaluate(
     {
@@ -84,11 +71,8 @@ async function evaluateLeaf(
     },
     {
       timeoutMs: context.wait.timeoutMs,
-      pollIntervalMs:
-        context.wait.pollIntervalMs,
-      ...(context.signal === undefined
-        ? {}
-        : { signal: context.signal }),
+      pollIntervalMs: context.wait.pollIntervalMs,
+      ...(context.signal === undefined ? {} : { signal: context.signal }),
     },
   );
 
@@ -108,22 +92,13 @@ async function evaluateNode(
   switch (condition.kind) {
     case 'surface':
     case 'outputPresent':
-      return evaluateLeaf(
-        condition,
-        context,
-        path,
-      );
+      return evaluateLeaf(condition, context, path);
 
     case 'all': {
       const evidenceRefs: EvidenceReference[] = [];
 
-      for (
-        let index = 0;
-        index < condition.conditions.length;
-        index += 1
-      ) {
-        const child =
-          condition.conditions[index];
+      for (let index = 0; index < condition.conditions.length; index += 1) {
+        const child = condition.conditions[index];
 
         if (child === undefined) {
           return {
@@ -134,11 +109,7 @@ async function evaluateNode(
           };
         }
 
-        const result = await evaluateNode(
-          child,
-          context,
-          `${path}.all.${index}`,
-        );
+        const result = await evaluateNode(child, context, `${path}.all.${index}`);
 
         evidenceRefs.push(...result.evidenceRefs);
 
@@ -163,23 +134,14 @@ async function evaluateNode(
     case 'any': {
       const evidenceRefs: EvidenceReference[] = [];
 
-      for (
-        let index = 0;
-        index < condition.conditions.length;
-        index += 1
-      ) {
-        const child =
-          condition.conditions[index];
+      for (let index = 0; index < condition.conditions.length; index += 1) {
+        const child = condition.conditions[index];
 
         if (child === undefined) {
           continue;
         }
 
-        const result = await evaluateNode(
-          child,
-          context,
-          `${path}.any.${index}`,
-        );
+        const result = await evaluateNode(child, context, `${path}.any.${index}`);
 
         evidenceRefs.push(...result.evidenceRefs);
 
@@ -202,11 +164,7 @@ async function evaluateNode(
     }
 
     case 'not': {
-      const result = await evaluateNode(
-        condition.condition,
-        context,
-        `${path}.not`,
-      );
+      const result = await evaluateNode(condition.condition, context, `${path}.not`);
 
       return {
         passed: !result.passed,
@@ -218,24 +176,20 @@ async function evaluateNode(
   }
 }
 
-export async function evaluateReplaySuccessCondition(
-  input: {
-    readonly adapter: SurfaceAdapter<TargetStrategy>;
-    readonly condition: ArtifactSuccessCondition;
-    readonly outputStore: ReplayOutputStore;
-    readonly wait: WaitPolicy;
-    readonly signal?: AbortSignal;
-  },
-): Promise<ReplaySuccessConditionResult> {
+export async function evaluateReplaySuccessCondition(input: {
+  readonly adapter: SurfaceAdapter<TargetStrategy>;
+  readonly condition: ArtifactSuccessCondition;
+  readonly outputStore: ReplayOutputStore;
+  readonly wait: WaitPolicy;
+  readonly signal?: AbortSignal;
+}): Promise<ReplaySuccessConditionResult> {
   const result = await evaluateNode(
     input.condition,
     {
       adapter: input.adapter,
       outputStore: input.outputStore,
       wait: input.wait,
-      ...(input.signal === undefined
-        ? {}
-        : { signal: input.signal }),
+      ...(input.signal === undefined ? {} : { signal: input.signal }),
     },
     'root',
   );
@@ -245,14 +199,12 @@ export async function evaluateReplaySuccessCondition(
       status: 'failure',
       error: {
         code: 'CHECKPOINT_FAILED',
-        message:
-          'Replay final success condition was not satisfied.',
+        message: 'Replay final success condition was not satisfied.',
         expected: true,
         observed: false,
         details: {
           phase: 'success_condition',
-          reason:
-            'FINAL_SUCCESS_CONDITION_NOT_MET',
+          reason: 'FINAL_SUCCESS_CONDITION_NOT_MET',
         },
       },
       evidenceRefs: result.evidenceRefs,

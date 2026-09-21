@@ -1,27 +1,14 @@
 import { ConditionEvaluator } from '../conditions/index.js';
 
-import type {
-  CapabilityArtifact,
-  WaitPolicy,
-} from '../artifact/index.js';
+import type { CapabilityArtifact, WaitPolicy } from '../artifact/index.js';
 
-import type {
-  BusinessOutcomeCode,
-} from '../runtime/index.js';
+import type { BusinessOutcomeCode } from '../runtime/index.js';
 
-import {
-  businessOutcomeCodeSchema,
-} from '../runtime/index.js';
+import { businessOutcomeCodeSchema } from '../runtime/index.js';
 
-import type {
-  EvidenceReference,
-  JsonValue,
-  SurfaceAdapter,
-} from '../surface/index.js';
+import type { EvidenceReference, JsonValue, SurfaceAdapter } from '../surface/index.js';
 
-import type {
-  TargetStrategy,
-} from '../targeting/index.js';
+import type { TargetStrategy } from '../targeting/index.js';
 
 export interface ReplayDetectedBusinessOutcome {
   readonly code: BusinessOutcomeCode;
@@ -54,10 +41,7 @@ export type ReplayBusinessOutcomeDetectionResult =
 export interface ReplayBusinessOutcomeDetectionInput {
   readonly adapter: SurfaceAdapter<TargetStrategy>;
 
-  readonly artifact: Pick<
-    CapabilityArtifact,
-    'knownBusinessOutcomes'
-  >;
+  readonly artifact: Pick<CapabilityArtifact, 'knownBusinessOutcomes'>;
 
   readonly wait: WaitPolicy;
   readonly signal?: AbortSignal;
@@ -71,40 +55,27 @@ export interface ReplayBusinessOutcomeDetectionInput {
 export async function detectReplayBusinessOutcome(
   input: ReplayBusinessOutcomeDetectionInput,
 ): Promise<ReplayBusinessOutcomeDetectionResult> {
-  const declarations =
-    input.artifact.knownBusinessOutcomes;
+  const declarations = input.artifact.knownBusinessOutcomes;
 
-  if (
-    declarations === undefined ||
-    declarations.length === 0
-  ) {
+  if (declarations === undefined || declarations.length === 0) {
     return {
       status: 'none',
       evidenceRefs: [],
     };
   }
 
-  const evaluator = new ConditionEvaluator(
-    input.adapter,
-  );
+  const evaluator = new ConditionEvaluator(input.adapter);
 
   const evidenceRefs: EvidenceReference[] = [];
 
-  for (
-    let index = 0;
-    index < declarations.length;
-    index += 1
-  ) {
+  for (let index = 0; index < declarations.length; index += 1) {
     const declaration = declarations[index];
 
     if (declaration === undefined) {
       continue;
     }
 
-    const code =
-      businessOutcomeCodeSchema.safeParse(
-        declaration.code,
-      );
+    const code = businessOutcomeCodeSchema.safeParse(declaration.code);
 
     if (!code.success) {
       return {
@@ -114,13 +85,11 @@ export async function detectReplayBusinessOutcome(
           message:
             `Artifact business outcome "${declaration.code}" ` +
             'is not supported by the runtime result contract.',
-          expected:
-            'supported runtime business outcome code',
+          expected: 'supported runtime business outcome code',
           observed: declaration.code,
           details: {
             phase: 'business_outcome_detection',
-            reason:
-              'UNSUPPORTED_BUSINESS_OUTCOME_CODE',
+            reason: 'UNSUPPORTED_BUSINESS_OUTCOME_CODE',
             detectorIndex: index,
           },
         },
@@ -128,8 +97,7 @@ export async function detectReplayBusinessOutcome(
       };
     }
 
-    const conditionId =
-      `business-outcome:${code.data}:${index}`;
+    const conditionId = `business-outcome:${code.data}:${index}`;
 
     const result = await evaluator.evaluate(
       {
@@ -138,8 +106,7 @@ export async function detectReplayBusinessOutcome(
       },
       {
         timeoutMs: input.wait.timeoutMs,
-        pollIntervalMs:
-          input.wait.pollIntervalMs,
+        pollIntervalMs: input.wait.pollIntervalMs,
 
         ...(input.signal === undefined
           ? {}
@@ -183,20 +150,17 @@ export async function detectReplayBusinessOutcome(
       error: {
         code: 'CHECKPOINT_FAILED',
 
-        message:
-          `Replay could not reliably evaluate business outcome "${code.data}".`,
+        message: `Replay could not reliably evaluate business outcome "${code.data}".`,
 
         expected: result.expected,
         observed: result.observed,
 
         details: {
           phase: 'business_outcome_detection',
-          reason:
-            'BUSINESS_OUTCOME_DETECTOR_ERROR',
+          reason: 'BUSINESS_OUTCOME_DETECTOR_ERROR',
           businessOutcomeCode: code.data,
           detectorIndex: index,
-          underlyingErrorCode:
-            result.error.code,
+          underlyingErrorCode: result.error.code,
         },
       },
 

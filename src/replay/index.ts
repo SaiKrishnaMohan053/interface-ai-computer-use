@@ -300,9 +300,7 @@ export { ReplayBrowserStepExecutor } from './replay-browser-step-executor.js';
 
 export type { ReplayBrowserStepExecutorOptions } from './replay-browser-step-executor.js';
 
-export {
-  recoverKnownReplayInterstitial,
-} from './replay-known-interstitial.js';
+export { recoverKnownReplayInterstitial } from './replay-known-interstitial.js';
 
 export type {
   ReplayKnownInterstitialInput,

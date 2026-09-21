@@ -1,21 +1,10 @@
-import {
-  ConditionEvaluator,
-} from '../conditions/index.js';
+import { ConditionEvaluator } from '../conditions/index.js';
 
-import type {
-  CapabilityStep,
-  WaitPolicy,
-} from '../artifact/index.js';
+import type { CapabilityStep, WaitPolicy } from '../artifact/index.js';
 
-import type {
-  EvidenceReference,
-  JsonValue,
-  SurfaceAdapter,
-} from '../surface/index.js';
+import type { EvidenceReference, JsonValue, SurfaceAdapter } from '../surface/index.js';
 
-import type {
-  TargetStrategy,
-} from '../targeting/index.js';
+import type { TargetStrategy } from '../targeting/index.js';
 
 export interface ReplayCheckpointFailure {
   readonly code: 'CHECKPOINT_FAILED';
@@ -65,9 +54,7 @@ function checkpointFailure(
   return {
     code: 'CHECKPOINT_FAILED',
 
-    message:
-      `Replay precondition ${input.conditionIndex + 1} ` +
-      `failed for step "${step.id}".`,
+    message: `Replay precondition ${input.conditionIndex + 1} ` + `failed for step "${step.id}".`,
 
     expected: input.expected,
     observed: input.observed,
@@ -82,8 +69,7 @@ function checkpointFailure(
       ...(input.underlyingErrorCode === undefined
         ? {}
         : {
-            underlyingErrorCode:
-              input.underlyingErrorCode,
+            underlyingErrorCode: input.underlyingErrorCode,
           }),
     },
   };
@@ -105,40 +91,28 @@ export async function evaluateReplayPreconditions(
 ): Promise<ReplayPreconditionResult> {
   const preconditions = input.step.preconditions;
 
-  if (
-    preconditions === undefined ||
-    preconditions.length === 0
-  ) {
+  if (preconditions === undefined || preconditions.length === 0) {
     return {
       status: 'passed',
       evidenceRefs: [],
     };
   }
 
-  const evaluator = new ConditionEvaluator(
-    input.adapter,
-  );
+  const evaluator = new ConditionEvaluator(input.adapter);
 
   const evidenceRefs: EvidenceReference[] = [];
 
-  const wait =
-    input.step.wait ?? input.defaultWait;
+  const wait = input.step.wait ?? input.defaultWait;
 
-  for (
-    let conditionIndex = 0;
-    conditionIndex < preconditions.length;
-    conditionIndex += 1
-  ) {
-    const condition =
-      preconditions[conditionIndex];
+  for (let conditionIndex = 0; conditionIndex < preconditions.length; conditionIndex += 1) {
+    const condition = preconditions[conditionIndex];
 
     if (condition === undefined) {
       return {
         status: 'failure',
         error: checkpointFailure(input.step, {
           conditionIndex,
-          conditionId:
-            `${input.step.id}:precondition:${conditionIndex}`,
+          conditionId: `${input.step.id}:precondition:${conditionIndex}`,
           expected: 'declared precondition',
           observed: 'missing',
           reason: 'INVALID_PRECONDITION_ORDER',
@@ -147,8 +121,7 @@ export async function evaluateReplayPreconditions(
       };
     }
 
-    const conditionId =
-      `${input.step.id}:precondition:${conditionIndex}`;
+    const conditionId = `${input.step.id}:precondition:${conditionIndex}`;
 
     const result = await evaluator.evaluate(
       {
@@ -182,10 +155,7 @@ export async function evaluateReplayPreconditions(
             conditionId,
             expected: result.expected,
             observed: result.observed,
-            reason:
-              result.reason === 'timeout'
-                ? 'PRECONDITION_TIMEOUT'
-                : 'PRECONDITION_MISMATCH',
+            reason: result.reason === 'timeout' ? 'PRECONDITION_TIMEOUT' : 'PRECONDITION_MISMATCH',
           }),
 
           evidenceRefs,
@@ -200,10 +170,8 @@ export async function evaluateReplayPreconditions(
             conditionId,
             expected: result.expected,
             observed: result.observed,
-            reason:
-              'PRECONDITION_EVALUATION_ERROR',
-            underlyingErrorCode:
-              result.error.code,
+            reason: 'PRECONDITION_EVALUATION_ERROR',
+            underlyingErrorCode: result.error.code,
           }),
 
           evidenceRefs,

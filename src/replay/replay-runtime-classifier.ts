@@ -4,13 +4,9 @@ import type {
   RuntimeFailureCode,
 } from '../runtime/index.js';
 
-import type {
-  JsonValue,
-} from '../surface/index.js';
+import type { JsonValue } from '../surface/index.js';
 
-import type {
-  ReplayDetectedBusinessOutcome,
-} from './replay-business-outcome-detector.js';
+import type { ReplayDetectedBusinessOutcome } from './replay-business-outcome-detector.js';
 
 export type ReplayRuntimeClassification =
   | {
@@ -26,9 +22,7 @@ export type ReplayRuntimeClassification =
       readonly intervention: {
         readonly code: InterventionReasonCode;
         readonly message: string;
-        readonly details: Readonly<
-          Record<string, JsonValue>
-        >;
+        readonly details: Readonly<Record<string, JsonValue>>;
       };
     }
   | {
@@ -38,9 +32,7 @@ export type ReplayRuntimeClassification =
         readonly message: string;
         readonly expected: JsonValue;
         readonly observed: JsonValue;
-        readonly details: Readonly<
-          Record<string, JsonValue>
-        >;
+        readonly details: Readonly<Record<string, JsonValue>>;
       };
     }
   | {
@@ -60,9 +52,7 @@ export type ReplayRuntimeSignal =
       readonly kind: 'intervention_required';
       readonly code: InterventionReasonCode;
       readonly message: string;
-      readonly details?: Readonly<
-        Record<string, JsonValue>
-      >;
+      readonly details?: Readonly<Record<string, JsonValue>>;
     }
   | {
       readonly kind: 'failure';
@@ -70,9 +60,7 @@ export type ReplayRuntimeSignal =
       readonly message: string;
       readonly expected: JsonValue;
       readonly observed: JsonValue;
-      readonly details?: Readonly<
-        Record<string, JsonValue>
-      >;
+      readonly details?: Readonly<Record<string, JsonValue>>;
     }
   | {
       readonly kind: 'none';

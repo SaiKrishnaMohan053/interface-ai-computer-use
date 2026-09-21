@@ -2,9 +2,9 @@
   "runId": "replay-failure",
   "mode": "REPLAY",
   "status": "failure",
-  "startedAt": "2026-09-21T03:05:36.120Z",
-  "finishedAt": "2026-09-21T03:05:36.514Z",
-  "durationMs": 394,
+  "startedAt": "2026-09-21T16:56:01.023Z",
+  "finishedAt": "2026-09-21T16:56:01.368Z",
+  "durationMs": 345,
   "result": {
     "status": "failure",
     "code": "APPLICATION_ERROR",
@@ -14,20 +14,20 @@
   },
   "evidenceRefs": [
     {
-      "evidenceId": "059aa0cd-f722-44fb-8ea2-5acf097547e3",
+      "evidenceId": "965c0534-f3da-4092-89fc-ca5dde5e80bc",
       "runId": "replay-failure",
       "kind": "event_log",
       "relativePath": "replay-failure/events.jsonl",
       "mediaType": "application/x-ndjson",
-      "capturedAt": "2026-09-21T03:05:36.120Z"
+      "capturedAt": "2026-09-21T16:56:01.023Z"
     },
     {
-      "evidenceId": "c274e2e2-3d54-4236-8bcd-5a864cdcd9f9",
+      "evidenceId": "e42cce4f-3656-4e30-8619-42e89c0258db",
       "runId": "replay-failure",
       "kind": "screenshot",
       "relativePath": "replay-failure/screenshots/screenshot-0001.png",
       "mediaType": "image/png",
-      "capturedAt": "2026-09-21T03:05:36.434Z"
+      "capturedAt": "2026-09-21T16:56:01.300Z"
     }
   ]
 }
