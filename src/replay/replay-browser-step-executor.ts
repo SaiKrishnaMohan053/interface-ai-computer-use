@@ -1,5 +1,7 @@
 import type { CapabilityStep, WaitPolicy } from '../artifact/index.js';
 
+import type { PolicyEngine } from '../policy/index.js';
+
 import type {
   ActionResult,
   ExecutableSurfaceAction,
@@ -8,6 +10,10 @@ import type {
 } from '../surface/index.js';
 
 import type { TargetStrategy } from '../targeting/index.js';
+
+import { detectReplayApplicationError } from './replay-application-error.js';
+
+import type { ReplayEvidenceSink } from './replay-evidence.js';
 
 import {
   detectReplayBusinessOutcome,
@@ -25,9 +31,11 @@ import type {
   ReplayStepExecutor,
 } from './replay-engine.js';
 
-import type { PolicyEngine } from '../policy/index.js';
+import { captureReplayFailureEvidence } from './replay-failure-evidence.js';
 
 import { recoverKnownReplayInterstitial } from './replay-known-interstitial.js';
+
+import type { ReplayRuntimeSignal } from './replay-runtime-classifier.js';
 
 const DEFAULT_WAIT: WaitPolicy = {
   timeoutMs: 5_000,
@@ -42,6 +50,8 @@ export interface ReplayBrowserStepExecutorOptions {
   readonly operationTimeoutMs?: number;
 
   readonly signal?: AbortSignal;
+
+  readonly evidenceSink?: ReplayEvidenceSink;
 
   readonly recordRecoveryAttempt?: (input: {
     readonly step: number;
@@ -206,6 +216,39 @@ export class ReplayBrowserStepExecutor implements ReplayStepExecutor {
     stepIndex: number,
     context: ReplayExecutionContext,
   ): Promise<ReplayOrderedStepResult> {
+    /*
+     * Detect a terminal application error before trying
+     * to interpret normal replay preconditions.
+     */
+    const applicationError = await detectReplayApplicationError({
+      adapter: this.options.surface,
+
+      stepId: step.id,
+
+      wait: {
+        timeoutMs: 250,
+        pollIntervalMs: 50,
+      },
+
+      captureEvidence: () => Promise.resolve([]),
+
+      ...(this.options.signal === undefined
+        ? {}
+        : {
+            signal: this.options.signal,
+          }),
+    });
+
+    if (applicationError.signal.kind === 'failure') {
+      await this.captureApplicationFailure(step, stepIndex, applicationError.signal);
+
+      return failure(applicationError.signal.code, applicationError.signal.message);
+    }
+
+    /*
+     * A known interstitial may exist before the
+     * step precondition itself becomes reachable.
+     */
     const initialInterstitial = await recoverKnownReplayInterstitial({
       adapter: this.options.surface,
 
@@ -220,13 +263,9 @@ export class ReplayBrowserStepExecutor implements ReplayStepExecutor {
 
         await this.options.recordRecoveryAttempt({
           step: stepIndex,
-
           stepId: step.id,
-
           conditionCode: attempt.conditionCode,
-
           attempt: attempt.attempt,
-
           outcome: attempt.outcome,
         });
       },
@@ -349,10 +388,8 @@ export class ReplayBrowserStepExecutor implements ReplayStepExecutor {
     const actionResult = await this.options.surface.perform(
       {
         actionId: `${stepIndex}:${step.id}`,
-
         action: translated.action,
       },
-
       {
         timeoutMs: this.operationTimeoutMs,
 
@@ -364,6 +401,11 @@ export class ReplayBrowserStepExecutor implements ReplayStepExecutor {
       },
     );
 
+    /*
+     * An action can navigate into a known
+     * interstitial. Recover before interpreting
+     * the resulting state.
+     */
     const interstitial = await recoverKnownReplayInterstitial({
       adapter: this.options.surface,
 
@@ -378,13 +420,9 @@ export class ReplayBrowserStepExecutor implements ReplayStepExecutor {
 
         await this.options.recordRecoveryAttempt({
           step: stepIndex,
-
           stepId: step.id,
-
           conditionCode: attempt.conditionCode,
-
           attempt: attempt.attempt,
-
           outcome: attempt.outcome,
         });
       },
@@ -412,6 +450,39 @@ export class ReplayBrowserStepExecutor implements ReplayStepExecutor {
 
     if (actionResult.status === 'failure') {
       return failure(actionResult.error.code, actionResult.error.message);
+    }
+
+    /*
+     * The action itself may have successfully navigated
+     * into an application-error page. Detect this before
+     * output extraction or normal postconditions.
+     */
+    const postActionApplicationError = await detectReplayApplicationError({
+      adapter: this.options.surface,
+
+      stepId: step.id,
+
+      wait: {
+        timeoutMs: 250,
+        pollIntervalMs: 50,
+      },
+
+      captureEvidence: () => Promise.resolve([]),
+
+      ...(this.options.signal === undefined
+        ? {}
+        : {
+            signal: this.options.signal,
+          }),
+    });
+
+    if (postActionApplicationError.signal.kind === 'failure') {
+      await this.captureApplicationFailure(step, stepIndex, postActionApplicationError.signal);
+
+      return failure(
+        postActionApplicationError.signal.code,
+        postActionApplicationError.signal.message,
+      );
     }
 
     const outputResult = this.storeOutput(step, actionResult, context);
@@ -500,6 +571,52 @@ export class ReplayBrowserStepExecutor implements ReplayStepExecutor {
     return {
       status: 'success',
     };
+  }
+
+  private async captureApplicationFailure(
+    step: CapabilityStep,
+    stepIndex: number,
+    signal: Extract<
+      ReplayRuntimeSignal,
+      {
+        readonly kind: 'failure';
+      }
+    >,
+  ): Promise<void> {
+    if (this.options.evidenceSink === undefined) {
+      return;
+    }
+
+    await captureReplayFailureEvidence({
+      surface: this.options.surface,
+
+      sink: this.options.evidenceSink,
+
+      step: stepIndex,
+
+      stepId: step.id,
+
+      failure: {
+        code: signal.code,
+        message: signal.message,
+        expected: signal.expected,
+        observed: signal.observed,
+
+        ...(signal.details === undefined
+          ? {}
+          : {
+              details: signal.details,
+            }),
+      },
+
+      operationTimeoutMs: this.operationTimeoutMs,
+
+      ...(this.options.signal === undefined
+        ? {}
+        : {
+            signal: this.options.signal,
+          }),
+    });
   }
 
   private storeOutput(

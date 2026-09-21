@@ -22,7 +22,7 @@ export type EvidenceRunMode =
 
 export type EvidenceEventType =
   | 'run_started'
-    | 'discovery.started'
+  | 'discovery.started'
   | 'observation.captured'
   | 'model.decision.requested'
   | 'model.decision.received'
@@ -49,7 +49,23 @@ export type EvidenceEventType =
   | 'intervention'
   | 'human_action'
   | 'evidence_captured'
-  | 'run_finished';
+  | 'run_finished'
+  | 'replay.started'
+| 'artifact.loaded'
+| 'inputs.validated'
+| 'step.started'
+| 'precondition.passed'
+| 'output.extracted'
+| 'postcondition.passed'
+| 'business_outcome.detected'
+| 'recovery.started'
+| 'recovery.attempted'
+| 'recovery.succeeded'
+| 'recovery.exhausted'
+| 'success_condition.passed'
+| 'replay.completed'
+| 'replay.failed'
+| 'replay.intervention_required';
 
 export type EvidenceRunStatus =
   | 'success'

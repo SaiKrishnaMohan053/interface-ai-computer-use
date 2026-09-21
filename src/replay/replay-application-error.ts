@@ -10,9 +10,9 @@ import type { ReplayRuntimeSignal } from './replay-runtime-classifier.js';
 
 const APPLICATION_ERROR_CONDITION = {
   kind: 'textPresent',
-  text: 'Application error',
+  text: 'APPLICATION_ERROR',
   match: 'contains',
-  caseSensitive: false,
+  caseSensitive: true,
 } as const;
 
 export interface ReplayApplicationErrorDetectionInput {
