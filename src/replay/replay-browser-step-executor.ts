@@ -27,6 +27,8 @@ import type {
 
 import type { PolicyEngine } from '../policy/index.js';
 
+import { recoverKnownReplayInterstitial } from './replay-known-interstitial.js';
+
 const DEFAULT_WAIT: WaitPolicy = {
   timeoutMs: 5_000,
   pollIntervalMs: 100,
@@ -40,6 +42,14 @@ export interface ReplayBrowserStepExecutorOptions {
   readonly operationTimeoutMs?: number;
 
   readonly signal?: AbortSignal;
+
+  readonly recordRecoveryAttempt?: (input: {
+    readonly step: number;
+    readonly stepId: string;
+    readonly conditionCode: 'KNOWN_DIALOG' | 'KNOWN_INTERSTITIAL';
+    readonly attempt: number;
+    readonly outcome: string;
+  }) => Promise<void>;
 }
 
 function failure(code: string, message: string): ReplayOrderedStepResult {
@@ -196,6 +206,52 @@ export class ReplayBrowserStepExecutor implements ReplayStepExecutor {
     stepIndex: number,
     context: ReplayExecutionContext,
   ): Promise<ReplayOrderedStepResult> {
+    const initialInterstitial = await recoverKnownReplayInterstitial({
+      adapter: this.options.surface,
+
+      step,
+
+      timeoutMs: this.operationTimeoutMs,
+
+      recordAttempt: async (attempt) => {
+        if (this.options.recordRecoveryAttempt === undefined) {
+          return;
+        }
+
+        await this.options.recordRecoveryAttempt({
+          step: stepIndex,
+
+          stepId: step.id,
+
+          conditionCode: attempt.conditionCode,
+
+          attempt: attempt.attempt,
+
+          outcome: attempt.outcome,
+        });
+      },
+
+      ...(this.options.signal === undefined
+        ? {}
+        : {
+            signal: this.options.signal,
+          }),
+    });
+
+    if (initialInterstitial.status === 'failure') {
+      return failure(initialInterstitial.code, initialInterstitial.message);
+    }
+
+    if (initialInterstitial.status === 'intervention_required') {
+      return {
+        status: 'intervention_required',
+
+        reasonCode: initialInterstitial.reasonCode,
+
+        reason: initialInterstitial.reason,
+      };
+    }
+
     const preconditions = await evaluateReplayPreconditions({
       adapter: this.options.surface,
 
@@ -307,6 +363,52 @@ export class ReplayBrowserStepExecutor implements ReplayStepExecutor {
             }),
       },
     );
+
+    const interstitial = await recoverKnownReplayInterstitial({
+      adapter: this.options.surface,
+
+      step,
+
+      timeoutMs: this.operationTimeoutMs,
+
+      recordAttempt: async (attempt) => {
+        if (this.options.recordRecoveryAttempt === undefined) {
+          return;
+        }
+
+        await this.options.recordRecoveryAttempt({
+          step: stepIndex,
+
+          stepId: step.id,
+
+          conditionCode: attempt.conditionCode,
+
+          attempt: attempt.attempt,
+
+          outcome: attempt.outcome,
+        });
+      },
+
+      ...(this.options.signal === undefined
+        ? {}
+        : {
+            signal: this.options.signal,
+          }),
+    });
+
+    if (interstitial.status === 'failure') {
+      return failure(interstitial.code, interstitial.message);
+    }
+
+    if (interstitial.status === 'intervention_required') {
+      return {
+        status: 'intervention_required',
+
+        reasonCode: interstitial.reasonCode,
+
+        reason: interstitial.reason,
+      };
+    }
 
     if (actionResult.status === 'failure') {
       return failure(actionResult.error.code, actionResult.error.message);
