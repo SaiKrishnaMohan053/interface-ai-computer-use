@@ -1,0 +1,333 @@
+{
+    "schemaVersion":  "1.0",
+    "identity":  {
+                     "description":  "Searches for a member and returns the current balance of their Savings account.",
+                     "id":  "lookup_savings_balance",
+                     "name":  "Lookup Savings Balance",
+                     "version":  "1.0.1"
+                 },
+    "compatibility":  {
+                          "application":  "demo-bank",
+                          "supportedVersionRange":  "1.x",
+                          "surfaceKind":  "web",
+                          "vendorFamily":  "demo-core"
+                      },
+    "inputs":  [
+                   {
+                       "description":  "Member name used for search.",
+                       "name":  "memberName",
+                       "required":  true,
+                       "sensitive":  true,
+                       "type":  "string"
+                   }
+               ],
+    "outputs":  [
+                    {
+                        "description":  "Current balance of the member\u0027s Savings account.",
+                        "name":  "savingsBalance",
+                        "required":  true,
+                        "type":  "currency"
+                    }
+                ],
+    "preconditions":  [
+                          {
+                              "caseSensitive":  false,
+                              "kind":  "textPresent",
+                              "match":  "contains",
+                              "text":  "Member Search"
+                          }
+                      ],
+    "steps":  [
+                  {
+                      "action":  {
+                                     "kind":  "type",
+                                     "mode":  "replace",
+                                     "value":  {
+                                                   "kind":  "inputRef",
+                                                   "name":  "memberName"
+                                               }
+                                 },
+                      "description":  "Enter the member name used for search.",
+                      "id":  "enter-member-search",
+                      "preconditions":  [
+                                            {
+                                                "kind":  "elementVisible",
+                                                "target":  {
+                                                               "cardinality":  "exactly-one",
+                                                               "description":  "Member Name input",
+                                                               "strategies":  [
+                                                                                  {
+                                                                                      "kind":  "role-name",
+                                                                                      "name":  {
+                                                                                                   "caseSensitive":  false,
+                                                                                                   "mode":  "exact",
+                                                                                                   "value":  "Member Name"
+                                                                                               },
+                                                                                      "role":  "textbox"
+                                                                                  }
+                                                                              ]
+                                                           }
+                                            }
+                                        ],
+                      "risk":  "REVERSIBLE",
+                      "target":  {
+                                     "cardinality":  "exactly-one",
+                                     "description":  "textbox named \"Member Name\"",
+                                     "strategies":  [
+                                                        {
+                                                            "kind":  "role-name",
+                                                            "name":  {
+                                                                         "caseSensitive":  false,
+                                                                         "mode":  "exact",
+                                                                         "value":  "Member Name"
+                                                                     },
+                                                            "role":  "textbox"
+                                                        }
+                                                    ]
+                                 },
+                      "recovery":  [
+                                       {
+                                           "kind":  "dismissKnownDialog",
+                                           "condition":  "KNOWN_INTERSTITIAL"
+                                       }
+                                   ]
+                  },
+                  {
+                      "action":  {
+                                     "kind":  "click"
+                                 },
+                      "description":  "Submit the member search.",
+                      "id":  "submit-member-search",
+                      "postconditions":  [
+                                             {
+                                                 "kind":  "loadingComplete"
+                                             },
+                                             {
+                                                 "caseSensitive":  false,
+                                                 "kind":  "textPresent",
+                                                 "match":  "contains",
+                                                 "text":  "Member Details"
+                                             }
+                                         ],
+                      "risk":  "READ_ONLY",
+                      "target":  {
+                                     "cardinality":  "exactly-one",
+                                     "description":  "button named \"Search\"",
+                                     "strategies":  [
+                                                        {
+                                                            "kind":  "role-name",
+                                                            "name":  {
+                                                                         "caseSensitive":  false,
+                                                                         "mode":  "exact",
+                                                                         "value":  "Search"
+                                                                     },
+                                                            "role":  "button"
+                                                        }
+                                                    ]
+                                 },
+                      "wait":  {
+                                   "pollIntervalMs":  100,
+                                   "timeoutMs":  5000
+                               }
+                  },
+                  {
+                      "action":  {
+                                     "kind":  "click"
+                                 },
+                      "description":  "Open the member Accounts view.",
+                      "id":  "open-accounts",
+                      "postconditions":  [
+                                             {
+                                                 "kind":  "elementVisible",
+                                                 "target":  {
+                                                                "cardinality":  "exactly-one",
+                                                                "description":  "Accounts table",
+                                                                "strategies":  [
+                                                                                   {
+                                                                                       "kind":  "text",
+                                                                                       "text":  {
+                                                                                                    "caseSensitive":  false,
+                                                                                                    "mode":  "exact",
+                                                                                                    "value":  "Accounts"
+                                                                                                }
+                                                                                   }
+                                                                               ]
+                                                            }
+                                             }
+                                         ],
+                      "risk":  "READ_ONLY",
+                      "target":  {
+                                     "cardinality":  "exactly-one",
+                                     "description":  "link named \"Accounts\"",
+                                     "strategies":  [
+                                                        {
+                                                            "kind":  "role-name",
+                                                            "name":  {
+                                                                         "caseSensitive":  false,
+                                                                         "mode":  "exact",
+                                                                         "value":  "Accounts"
+                                                                     },
+                                                            "role":  "link"
+                                                        }
+                                                    ]
+                                 },
+                      "wait":  {
+                                   "pollIntervalMs":  100,
+                                   "timeoutMs":  5000
+                               }
+                  },
+                  {
+                      "action":  {
+                                     "kind":  "read",
+                                     "saveAs":  {
+                                                    "kind":  "outputRef",
+                                                    "name":  "savingsBalance"
+                                                },
+                                     "source":  "text"
+                                 },
+                      "description":  "Read the current balance of the Savings account.",
+                      "id":  "read-savings-balance",
+                      "preconditions":  [
+                                            {
+                                                "kind":  "elementVisible",
+                                                "target":  {
+                                                               "cardinality":  "exactly-one",
+                                                               "description":  "Accounts table",
+                                                               "strategies":  [
+                                                                                  {
+                                                                                      "kind":  "text",
+                                                                                      "text":  {
+                                                                                                   "caseSensitive":  false,
+                                                                                                   "mode":  "exact",
+                                                                                                   "value":  "Accounts"
+                                                                                               }
+                                                                                  }
+                                                                              ]
+                                                           }
+                                            }
+                                        ],
+                      "risk":  "READ_ONLY",
+                      "target":  {
+                                     "cardinality":  "exactly-one",
+                                     "description":  "table cell in \"Accounts\" where \"Account Type\" equals \"Savings\" column \"Current Balance\"",
+                                     "strategies":  [
+                                                        {
+                                                            "kind":  "structural",
+                                                            "query":  {
+                                                                          "column":  {
+                                                                                         "header":  {
+                                                                                                        "caseSensitive":  false,
+                                                                                                        "mode":  "exact",
+                                                                                                        "value":  "Current Balance"
+                                                                                                    }
+                                                                                     },
+                                                                          "kind":  "table-cell",
+                                                                          "row":  {
+                                                                                      "columnHeader":  {
+                                                                                                           "caseSensitive":  false,
+                                                                                                           "mode":  "exact",
+                                                                                                           "value":  "Account Type"
+                                                                                                       },
+                                                                                      "value":  {
+                                                                                                    "caseSensitive":  false,
+                                                                                                    "mode":  "exact",
+                                                                                                    "value":  "Savings"
+                                                                                                }
+                                                                                  },
+                                                                          "table":  {
+                                                                                        "name":  {
+                                                                                                     "caseSensitive":  false,
+                                                                                                     "mode":  "contains",
+                                                                                                     "value":  "Accounts"
+                                                                                                 }
+                                                                                    }
+                                                                      }
+                                                        }
+                                                    ]
+                                 }
+                  }
+              ],
+    "knownBusinessOutcomes":  [
+                                  {
+                                      "code":  "MEMBER_NOT_FOUND",
+                                      "description":  "No member matched the supplied lookup input.",
+                                      "detector":  {
+                                                       "caseSensitive":  false,
+                                                       "kind":  "textPresent",
+                                                       "match":  "contains",
+                                                       "text":  "No matching member was found."
+                                                   }
+                                  }
+                              ],
+    "successCondition":  {
+                             "conditions":  [
+                                                {
+                                                    "condition":  {
+                                                                      "kind":  "elementVisible",
+                                                                      "target":  {
+                                                                                     "cardinality":  "exactly-one",
+                                                                                     "description":  "Savings Current Balance cell in Accounts table",
+                                                                                     "strategies":  [
+                                                                                                        {
+                                                                                                            "kind":  "structural",
+                                                                                                            "query":  {
+                                                                                                                          "column":  {
+                                                                                                                                         "header":  {
+                                                                                                                                                        "caseSensitive":  false,
+                                                                                                                                                        "mode":  "exact",
+                                                                                                                                                        "value":  "Current Balance"
+                                                                                                                                                    }
+                                                                                                                                     },
+                                                                                                                          "kind":  "table-cell",
+                                                                                                                          "row":  {
+                                                                                                                                      "columnHeader":  {
+                                                                                                                                                           "caseSensitive":  false,
+                                                                                                                                                           "mode":  "exact",
+                                                                                                                                                           "value":  "Account Type"
+                                                                                                                                                       },
+                                                                                                                                      "value":  {
+                                                                                                                                                    "caseSensitive":  false,
+                                                                                                                                                    "mode":  "exact",
+                                                                                                                                                    "value":  "Savings"
+                                                                                                                                                }
+                                                                                                                                  },
+                                                                                                                          "table":  {
+                                                                                                                                        "name":  {
+                                                                                                                                                     "caseSensitive":  false,
+                                                                                                                                                     "mode":  "contains",
+                                                                                                                                                     "value":  "Accounts"
+                                                                                                                                                 }
+                                                                                                                                    }
+                                                                                                                      }
+                                                                                                        }
+                                                                                                    ]
+                                                                                 }
+                                                                  },
+                                                    "kind":  "surface"
+                                                },
+                                                {
+                                                    "kind":  "outputPresent",
+                                                    "output":  {
+                                                                   "kind":  "outputRef",
+                                                                   "name":  "savingsBalance"
+                                                               }
+                                                }
+                                            ],
+                             "kind":  "all"
+                         },
+    "risk":  {
+                 "maxStepRisk":  "REVERSIBLE",
+                 "requiresHumanByDefault":  false,
+                 "runtimePolicyRequired":  true,
+                 "summaryRisk":  "READ_ONLY"
+             },
+    "provenance":  {
+                       "compiledAt":  "2026-09-18T16:00:00.000Z",
+                       "compilerVersion":  "1",
+                       "discoveryRunId":  "9635c0c9-dc3a-4b64-aa38-b1f48a359ea0",
+                       "sourceGoal":  "Look up a member and return their current savings balance."
+                   },
+    "metadata":  {
+
+                 }
+}

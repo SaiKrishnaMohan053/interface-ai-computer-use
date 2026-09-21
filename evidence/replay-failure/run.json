@@ -1,0 +1,9 @@
+{
+  "runId": "replay-failure",
+  "mode": "REPLAY",
+  "startedAt": "2026-09-21T03:05:36.120Z",
+  "metadata": {
+    "policyId": "replay-evidence-freeze-policy",
+    "value": null
+  }
+}

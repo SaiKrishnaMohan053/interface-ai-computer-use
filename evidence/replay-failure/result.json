@@ -1,0 +1,33 @@
+{
+  "runId": "replay-failure",
+  "mode": "REPLAY",
+  "status": "failure",
+  "startedAt": "2026-09-21T03:05:36.120Z",
+  "finishedAt": "2026-09-21T03:05:36.514Z",
+  "durationMs": 394,
+  "result": {
+    "status": "failure",
+    "code": "APPLICATION_ERROR",
+    "message": "Application error detected while executing replay step \"enter-member-search\".",
+    "stepId": "enter-member-search",
+    "stepsExecuted": 0
+  },
+  "evidenceRefs": [
+    {
+      "evidenceId": "059aa0cd-f722-44fb-8ea2-5acf097547e3",
+      "runId": "replay-failure",
+      "kind": "event_log",
+      "relativePath": "replay-failure/events.jsonl",
+      "mediaType": "application/x-ndjson",
+      "capturedAt": "2026-09-21T03:05:36.120Z"
+    },
+    {
+      "evidenceId": "c274e2e2-3d54-4236-8bcd-5a864cdcd9f9",
+      "runId": "replay-failure",
+      "kind": "screenshot",
+      "relativePath": "replay-failure/screenshots/screenshot-0001.png",
+      "mediaType": "image/png",
+      "capturedAt": "2026-09-21T03:05:36.434Z"
+    }
+  ]
+}

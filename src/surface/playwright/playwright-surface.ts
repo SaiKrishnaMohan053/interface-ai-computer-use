@@ -615,20 +615,38 @@ export class PlaywrightSurface implements SurfaceAdapter<PlaywrightStrategy> {
         break;
 
       case 'loadingComplete':
-        // Explicit completion marker supplied by a concrete application integration.
         expected = 'complete';
 
         observed = await this.page.evaluate(() => {
-          const visible = (element: Element): boolean =>
-            element instanceof HTMLElement &&
-            element.checkVisibility({
-              checkOpacity: true,
-              checkVisibilityCSS: true,
-            });
+          let busy = false;
 
-          const busy = [...document.querySelectorAll('[aria-busy="true"]')].some(visible);
+          for (const element of document.querySelectorAll('[aria-busy="true"]')) {
+            if (
+              element instanceof HTMLElement &&
+              element.checkVisibility({
+                checkOpacity: true,
+                checkVisibilityCSS: true,
+              })
+            ) {
+              busy = true;
+              break;
+            }
+          }
 
-          const ready = [...document.querySelectorAll('[data-surface-ready="true"]')].some(visible);
+          let ready = false;
+
+          for (const element of document.querySelectorAll('[data-surface-ready="true"]')) {
+            if (
+              element instanceof HTMLElement &&
+              element.checkVisibility({
+                checkOpacity: true,
+                checkVisibilityCSS: true,
+              })
+            ) {
+              ready = true;
+              break;
+            }
+          }
 
           return busy ? 'loading' : ready ? 'complete' : 'unknown';
         });
@@ -674,11 +692,6 @@ export class PlaywrightSurface implements SurfaceAdapter<PlaywrightStrategy> {
         throw new Fault('SURFACE_UNAVAILABLE', 'Surface unavailable during condition evaluation');
       }
 
-      /*
-       * Navigation may replace the execution context
-       * between polling attempts. This is a temporary
-       * mismatch, not an immediate terminal failure.
-       */
       return {
         passed: false,
         expected: 'stable surface for condition evaluation',

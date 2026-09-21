@@ -1,0 +1,25 @@
+{
+  "runId": "replay-success",
+  "mode": "REPLAY",
+  "status": "success",
+  "startedAt": "2026-09-21T03:05:23.638Z",
+  "finishedAt": "2026-09-21T03:05:26.598Z",
+  "durationMs": 2960,
+  "result": {
+    "status": "success",
+    "stepsExecuted": 4,
+    "outputs": {
+      "savingsBalance": "$12,840.50"
+    }
+  },
+  "evidenceRefs": [
+    {
+      "evidenceId": "172a9cde-f2f0-414d-ae86-05cb6da01b0a",
+      "runId": "replay-success",
+      "kind": "event_log",
+      "relativePath": "replay-success/events.jsonl",
+      "mediaType": "application/x-ndjson",
+      "capturedAt": "2026-09-21T03:05:23.638Z"
+    }
+  ]
+}

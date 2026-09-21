@@ -12,12 +12,28 @@ coverage/
 playwright-report/
 test-results/
 
-# Runtime outputs are private by default.
 artifacts/*
 !artifacts/.gitkeep
 
+# Reviewer-safe capability artifacts.
+!artifacts/lookup_savings_balance/
+!artifacts/lookup_savings_balance/1.0.0.json
+!artifacts/lookup_savings_balance/1.0.0.sha256
+!artifacts/lookup_savings_balance/1.0.1.json
+!artifacts/lookup_savings_balance/1.0.1.sha256
+
 evidence/*
 !evidence/.gitkeep
+
+# Reviewer-safe frozen evidence.
+!evidence/replay-success/
+!evidence/replay-success/**
+!evidence/replay-member-not-found/
+!evidence/replay-member-not-found/**
+!evidence/replay-recovery/
+!evidence/replay-recovery/**
+!evidence/replay-failure/
+!evidence/replay-failure/**
 
 .DS_Store
 Thumbs.db

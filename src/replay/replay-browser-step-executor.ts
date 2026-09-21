@@ -13,7 +13,7 @@ import type { TargetStrategy } from '../targeting/index.js';
 
 import { detectReplayApplicationError } from './replay-application-error.js';
 
-import type { ReplayEvidenceSink } from './replay-evidence.js';
+import { recordReplayEvidence, type ReplayEvidenceSink } from './replay-evidence.js';
 
 import {
   detectReplayBusinessOutcome,
@@ -44,15 +44,10 @@ const DEFAULT_WAIT: WaitPolicy = {
 
 export interface ReplayBrowserStepExecutorOptions {
   readonly surface: SurfaceAdapter<TargetStrategy>;
-
   readonly policyEngine: PolicyEngine;
-
   readonly operationTimeoutMs?: number;
-
   readonly signal?: AbortSignal;
-
   readonly evidenceSink?: ReplayEvidenceSink;
-
   readonly recordRecoveryAttempt?: (input: {
     readonly step: number;
     readonly stepId: string;
@@ -216,22 +211,14 @@ export class ReplayBrowserStepExecutor implements ReplayStepExecutor {
     stepIndex: number,
     context: ReplayExecutionContext,
   ): Promise<ReplayOrderedStepResult> {
-    /*
-     * Detect a terminal application error before trying
-     * to interpret normal replay preconditions.
-     */
     const applicationError = await detectReplayApplicationError({
       adapter: this.options.surface,
-
       stepId: step.id,
-
       wait: {
         timeoutMs: 250,
         pollIntervalMs: 50,
       },
-
       captureEvidence: () => Promise.resolve([]),
-
       ...(this.options.signal === undefined
         ? {}
         : {
@@ -245,31 +232,18 @@ export class ReplayBrowserStepExecutor implements ReplayStepExecutor {
       return failure(applicationError.signal.code, applicationError.signal.message);
     }
 
-    /*
-     * A known interstitial may exist before the
-     * step precondition itself becomes reachable.
-     */
     const initialInterstitial = await recoverKnownReplayInterstitial({
       adapter: this.options.surface,
-
       step,
-
       timeoutMs: this.operationTimeoutMs,
-
-      recordAttempt: async (attempt) => {
-        if (this.options.recordRecoveryAttempt === undefined) {
-          return;
-        }
-
-        await this.options.recordRecoveryAttempt({
+      recordAttempt: (attempt) =>
+        this.recordRecoveryAttempt({
           step: stepIndex,
           stepId: step.id,
           conditionCode: attempt.conditionCode,
           attempt: attempt.attempt,
           outcome: attempt.outcome,
-        });
-      },
-
+        }),
       ...(this.options.signal === undefined
         ? {}
         : {
@@ -284,20 +258,15 @@ export class ReplayBrowserStepExecutor implements ReplayStepExecutor {
     if (initialInterstitial.status === 'intervention_required') {
       return {
         status: 'intervention_required',
-
         reasonCode: initialInterstitial.reasonCode,
-
         reason: initialInterstitial.reason,
       };
     }
 
     const preconditions = await evaluateReplayPreconditions({
       adapter: this.options.surface,
-
       step,
-
       defaultWait: DEFAULT_WAIT,
-
       ...(this.options.signal === undefined
         ? {}
         : {
@@ -309,13 +278,22 @@ export class ReplayBrowserStepExecutor implements ReplayStepExecutor {
       return failure(preconditions.error.code, preconditions.error.message);
     }
 
+    if (this.options.evidenceSink !== undefined) {
+      await recordReplayEvidence({
+        sink: this.options.evidenceSink,
+        eventType: 'precondition.passed',
+        step: stepIndex,
+        stepId: step.id,
+        details: {
+          count: step.preconditions?.length ?? 0,
+        },
+      });
+    }
+
     const observation = await this.options.surface.observe({
       timeoutMs: this.operationTimeoutMs,
-
       maxTextLength: 10_000,
-
       maxControls: 200,
-
       ...(this.options.signal === undefined
         ? {}
         : {
@@ -346,11 +324,23 @@ export class ReplayBrowserStepExecutor implements ReplayStepExecutor {
     if (policy.status === 'intervention_required') {
       return {
         status: 'intervention_required',
-
         reasonCode: policy.intervention.code,
-
         reason: policy.intervention.message,
       };
+    }
+
+    if (this.options.evidenceSink !== undefined) {
+      await recordReplayEvidence({
+        sink: this.options.evidenceSink,
+        eventType: 'policy.evaluated',
+        step: stepIndex,
+        stepId: step.id,
+        details: {
+          decision: 'ALLOW',
+          actionKind: step.action.kind,
+          storedRisk: step.risk,
+        },
+      });
     }
 
     let target: ResolvedTarget | null = null;
@@ -358,13 +348,9 @@ export class ReplayBrowserStepExecutor implements ReplayStepExecutor {
     if (step.target !== undefined) {
       const resolution = await resolveReplayStepTarget({
         adapter: this.options.surface,
-
         step,
-
         observationId: observation.observation.observationId,
-
         timeoutMs: this.operationTimeoutMs,
-
         ...(this.options.signal === undefined
           ? {}
           : {
@@ -377,6 +363,18 @@ export class ReplayBrowserStepExecutor implements ReplayStepExecutor {
       }
 
       target = resolution.target;
+
+      if (this.options.evidenceSink !== undefined) {
+        await recordReplayEvidence({
+          sink: this.options.evidenceSink,
+          eventType: 'target.resolved',
+          step: stepIndex,
+          stepId: step.id,
+          details: {
+            resolved: true,
+          },
+        });
+      }
     }
 
     const translated = executableAction(step, target, context);
@@ -392,7 +390,6 @@ export class ReplayBrowserStepExecutor implements ReplayStepExecutor {
       },
       {
         timeoutMs: this.operationTimeoutMs,
-
         ...(this.options.signal === undefined
           ? {}
           : {
@@ -401,32 +398,18 @@ export class ReplayBrowserStepExecutor implements ReplayStepExecutor {
       },
     );
 
-    /*
-     * An action can navigate into a known
-     * interstitial. Recover before interpreting
-     * the resulting state.
-     */
     const interstitial = await recoverKnownReplayInterstitial({
       adapter: this.options.surface,
-
       step,
-
       timeoutMs: this.operationTimeoutMs,
-
-      recordAttempt: async (attempt) => {
-        if (this.options.recordRecoveryAttempt === undefined) {
-          return;
-        }
-
-        await this.options.recordRecoveryAttempt({
+      recordAttempt: (attempt) =>
+        this.recordRecoveryAttempt({
           step: stepIndex,
           stepId: step.id,
           conditionCode: attempt.conditionCode,
           attempt: attempt.attempt,
           outcome: attempt.outcome,
-        });
-      },
-
+        }),
       ...(this.options.signal === undefined
         ? {}
         : {
@@ -441,9 +424,7 @@ export class ReplayBrowserStepExecutor implements ReplayStepExecutor {
     if (interstitial.status === 'intervention_required') {
       return {
         status: 'intervention_required',
-
         reasonCode: interstitial.reasonCode,
-
         reason: interstitial.reason,
       };
     }
@@ -452,23 +433,26 @@ export class ReplayBrowserStepExecutor implements ReplayStepExecutor {
       return failure(actionResult.error.code, actionResult.error.message);
     }
 
-    /*
-     * The action itself may have successfully navigated
-     * into an application-error page. Detect this before
-     * output extraction or normal postconditions.
-     */
+    if (this.options.evidenceSink !== undefined) {
+      await recordReplayEvidence({
+        sink: this.options.evidenceSink,
+        eventType: 'action.completed',
+        step: stepIndex,
+        stepId: step.id,
+        details: {
+          actionKind: step.action.kind,
+        },
+      });
+    }
+
     const postActionApplicationError = await detectReplayApplicationError({
       adapter: this.options.surface,
-
       stepId: step.id,
-
       wait: {
         timeoutMs: 250,
         pollIntervalMs: 50,
       },
-
       captureEvidence: () => Promise.resolve([]),
-
       ...(this.options.signal === undefined
         ? {}
         : {
@@ -491,21 +475,27 @@ export class ReplayBrowserStepExecutor implements ReplayStepExecutor {
       return outputResult;
     }
 
+    if (step.action.kind === 'read' && this.options.evidenceSink !== undefined) {
+      await recordReplayEvidence({
+        sink: this.options.evidenceSink,
+        eventType: 'output.extracted',
+        step: stepIndex,
+        stepId: step.id,
+        details: {
+          outputName: step.action.saveAs.name,
+        },
+      });
+    }
+
     const postconditions = await evaluateReplayPostconditions({
       adapter: this.options.surface,
-
       step,
-
       defaultWait: DEFAULT_WAIT,
-
       detectCurrentState: async () => {
         const outcome = await detectReplayBusinessOutcome({
           adapter: this.options.surface,
-
           artifact: context.artifact,
-
           wait: step.wait ?? DEFAULT_WAIT,
-
           ...(this.options.signal === undefined
             ? {}
             : {
@@ -516,11 +506,8 @@ export class ReplayBrowserStepExecutor implements ReplayStepExecutor {
         if (outcome.status === 'detected') {
           return {
             status: 'business_outcome',
-
             code: outcome.outcome.code,
-
             message: outcome.outcome.message,
-
             details: outcome.outcome.details,
           };
         }
@@ -535,7 +522,6 @@ export class ReplayBrowserStepExecutor implements ReplayStepExecutor {
           status: 'none',
         };
       },
-
       ...(this.options.signal === undefined
         ? {}
         : {
@@ -546,9 +532,7 @@ export class ReplayBrowserStepExecutor implements ReplayStepExecutor {
     if (postconditions.status === 'business_outcome') {
       return {
         status: 'business_outcome',
-
         code: postconditions.outcome.code,
-
         ...(postconditions.outcome.details === undefined
           ? {}
           : {
@@ -568,9 +552,74 @@ export class ReplayBrowserStepExecutor implements ReplayStepExecutor {
       return failure(postconditions.error.code, postconditions.error.message);
     }
 
+    if (this.options.evidenceSink !== undefined) {
+      await recordReplayEvidence({
+        sink: this.options.evidenceSink,
+        eventType: 'postcondition.passed',
+        step: stepIndex,
+        stepId: step.id,
+        details: {
+          count: step.postconditions?.length ?? 0,
+        },
+        evidenceRefs: postconditions.evidenceRefs,
+      });
+    }
+
     return {
       status: 'success',
     };
+  }
+
+  private async recordRecoveryAttempt(input: {
+    readonly step: number;
+    readonly stepId: string;
+    readonly conditionCode: 'KNOWN_DIALOG' | 'KNOWN_INTERSTITIAL';
+    readonly attempt: number;
+    readonly outcome: string;
+  }): Promise<void> {
+    if (this.options.evidenceSink !== undefined) {
+      if (input.outcome === 'started') {
+        await recordReplayEvidence({
+          sink: this.options.evidenceSink,
+          eventType: 'recovery.started',
+          step: input.step,
+          stepId: input.stepId,
+          details: {
+            conditionCode: input.conditionCode,
+            attempt: input.attempt,
+          },
+        });
+      }
+
+      await recordReplayEvidence({
+        sink: this.options.evidenceSink,
+        eventType: 'recovery.attempted',
+        step: input.step,
+        stepId: input.stepId,
+        details: {
+          conditionCode: input.conditionCode,
+          attempt: input.attempt,
+          outcome: input.outcome,
+        },
+      });
+
+      if (input.outcome === 'dismissed') {
+        await recordReplayEvidence({
+          sink: this.options.evidenceSink,
+          eventType: 'recovery.succeeded',
+          step: input.step,
+          stepId: input.stepId,
+          details: {
+            conditionCode: input.conditionCode,
+            attempt: input.attempt,
+          },
+        });
+      }
+    }
+
+    if (this.options.recordRecoveryAttempt !== undefined) {
+      await this.options.recordRecoveryAttempt(input);
+    }
   }
 
   private async captureApplicationFailure(
@@ -589,28 +638,21 @@ export class ReplayBrowserStepExecutor implements ReplayStepExecutor {
 
     await captureReplayFailureEvidence({
       surface: this.options.surface,
-
       sink: this.options.evidenceSink,
-
       step: stepIndex,
-
       stepId: step.id,
-
       failure: {
         code: signal.code,
         message: signal.message,
         expected: signal.expected,
         observed: signal.observed,
-
         ...(signal.details === undefined
           ? {}
           : {
               details: signal.details,
             }),
       },
-
       operationTimeoutMs: this.operationTimeoutMs,
-
       ...(this.options.signal === undefined
         ? {}
         : {
@@ -630,9 +672,7 @@ export class ReplayBrowserStepExecutor implements ReplayStepExecutor {
 
     const extraction = extractReplayOutput({
       stepId: step.id,
-
       outputName: step.action.saveAs.name,
-
       actionResult,
     });
 

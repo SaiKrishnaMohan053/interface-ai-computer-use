@@ -2,6 +2,8 @@ import type { ArtifactStore, CapabilityArtifact, CapabilityStep } from '../artif
 
 import type { JsonValue } from '../surface/index.js';
 
+import { recordReplayEvidence, type ReplayEvidenceSink } from './replay-evidence.js';
+
 import { prepareReplayInvocation } from './replay-preparation.js';
 
 import type { ReplayRequest } from './replay-request.js';
@@ -73,6 +75,7 @@ export type ReplayOrderedExecutionResult =
 export interface ReplayEngineDependencies {
   readonly artifactStore: Pick<ArtifactStore, 'load'>;
   readonly stepExecutor: ReplayStepExecutor;
+  readonly evidenceSink?: ReplayEvidenceSink;
 }
 
 /**
@@ -92,9 +95,35 @@ export class ReplayEngine {
   constructor(private readonly dependencies: ReplayEngineDependencies) {}
 
   async runOrderedSteps(request: ReplayRequest): Promise<ReplayOrderedExecutionResult> {
+    const evidenceSink = this.dependencies.evidenceSink;
+
+    if (evidenceSink !== undefined) {
+      await recordReplayEvidence({
+        sink: evidenceSink,
+        eventType: 'replay.started',
+        step: 0,
+        details: {
+          capabilityId: request.capabilityId,
+          version: request.version,
+        },
+      });
+    }
+
     const prepared = await prepareReplayInvocation(this.dependencies.artifactStore, request);
 
     if (prepared.status === 'invalid_input') {
+      if (evidenceSink !== undefined) {
+        await recordReplayEvidence({
+          sink: evidenceSink,
+          eventType: 'replay.failed',
+          step: 0,
+          details: {
+            code: 'INVALID_INPUT',
+            message: prepared.error.message,
+          },
+        });
+      }
+
       return {
         status: 'failure',
         stepsExecuted: 0,
@@ -105,6 +134,27 @@ export class ReplayEngine {
           message: prepared.error.message,
         },
       };
+    }
+
+    if (evidenceSink !== undefined) {
+      await recordReplayEvidence({
+        sink: evidenceSink,
+        eventType: 'artifact.loaded',
+        step: 0,
+        details: {
+          capabilityId: prepared.artifact.identity.id,
+          version: prepared.artifact.identity.version,
+        },
+      });
+
+      await recordReplayEvidence({
+        sink: evidenceSink,
+        eventType: 'inputs.validated',
+        step: 0,
+        details: {
+          inputNames: Object.keys(prepared.inputs),
+        },
+      });
     }
 
     const outputStore = new ReplayOutputStore(prepared.artifact);
@@ -121,6 +171,18 @@ export class ReplayEngine {
       const step = prepared.artifact.steps[stepIndex];
 
       if (step === undefined) {
+        if (evidenceSink !== undefined) {
+          await recordReplayEvidence({
+            sink: evidenceSink,
+            eventType: 'replay.failed',
+            step: stepIndex,
+            details: {
+              code: 'ACTION_FAILED',
+              message: 'Artifact step ordering became inconsistent.',
+            },
+          });
+        }
+
         return {
           status: 'failure',
           stepsExecuted,
@@ -133,6 +195,19 @@ export class ReplayEngine {
         };
       }
 
+      if (evidenceSink !== undefined) {
+        await recordReplayEvidence({
+          sink: evidenceSink,
+          eventType: 'step.started',
+          step: stepIndex,
+          stepId: step.id,
+          details: {
+            actionKind: step.action.kind,
+            risk: step.risk,
+          },
+        });
+      }
+
       const result = await this.dependencies.stepExecutor.execute(step, stepIndex, context);
 
       switch (result.status) {
@@ -141,6 +216,23 @@ export class ReplayEngine {
           break;
 
         case 'business_outcome':
+          if (evidenceSink !== undefined) {
+            await recordReplayEvidence({
+              sink: evidenceSink,
+              eventType: 'business_outcome.detected',
+              step: stepIndex,
+              stepId: step.id,
+              details: {
+                code: result.code,
+                ...(result.details === undefined
+                  ? {}
+                  : {
+                      details: result.details,
+                    }),
+              },
+            });
+          }
+
           return {
             status: 'business_outcome',
             stepsExecuted,
@@ -149,6 +241,19 @@ export class ReplayEngine {
           };
 
         case 'intervention_required':
+          if (evidenceSink !== undefined) {
+            await recordReplayEvidence({
+              sink: evidenceSink,
+              eventType: 'replay.intervention_required',
+              step: stepIndex,
+              stepId: step.id,
+              details: {
+                reasonCode: result.reasonCode,
+                reason: result.reason,
+              },
+            });
+          }
+
           return {
             status: 'intervention_required',
             stepsExecuted,
@@ -157,6 +262,12 @@ export class ReplayEngine {
           };
 
         case 'failure':
+          /*
+           * Runtime hard-failure evidence is recorded by the concrete
+           * executor where expected/observed state and screenshots are
+           * available. Avoid emitting a duplicate, less-informative
+           * replay.failed event here.
+           */
           return {
             status: 'failure',
             stepsExecuted,
@@ -169,6 +280,18 @@ export class ReplayEngine {
     const outputs = outputStore.finalize();
 
     if (outputs.status === 'failure') {
+      if (evidenceSink !== undefined) {
+        await recordReplayEvidence({
+          sink: evidenceSink,
+          eventType: 'replay.failed',
+          step: stepsExecuted,
+          details: {
+            code: outputs.error.code,
+            message: outputs.error.message,
+          },
+        });
+      }
+
       return {
         status: 'failure',
         stepsExecuted,
@@ -179,6 +302,18 @@ export class ReplayEngine {
           message: outputs.error.message,
         },
       };
+    }
+
+    if (evidenceSink !== undefined) {
+      await recordReplayEvidence({
+        sink: evidenceSink,
+        eventType: 'replay.completed',
+        step: stepsExecuted,
+        details: {
+          stepsExecuted,
+          outputNames: Object.keys(outputs.outputs),
+        },
+      });
     }
 
     return {
