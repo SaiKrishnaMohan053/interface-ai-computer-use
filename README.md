@@ -8,10 +8,14 @@ The implemented flow is:
 Natural-language goal
 -> LLM-guided discovery against a live UI
 -> typed capability artifact
--> deterministic artifact persistence
+-> immutable artifact persistence
+-> deterministic replay without the LLM
+-> structured outcomes, recovery, failure evidence
 ```
 
-Deterministic replay is the next production execution phase. The full human operator interface is intentionally not implemented.
+The target application is a local synthetic banking UI using fictional members and financial data.
+
+The full operator UI is intentionally not implemented.
 
 ## Setup
 
@@ -56,8 +60,6 @@ Open:
 http://127.0.0.1:3000/member-search
 ```
 
-The application uses fictional members and financial data.
-
 ## Run genuine discovery
 
 ```powershell
@@ -74,32 +76,31 @@ A preserved successful OpenAI-driven discovery run is available at:
 evidence/discovery-success/
 ```
 
-Discovery produces structured results and sanitized evidence. Raw model responses, secrets, cookies, browser handles, and hidden reasoning are not persisted.
+Discovery persists sanitized structured evidence. Raw model responses, secrets, cookies, browser handles, and hidden reasoning are not persisted.
 
 ## Capability artifact
 
-A capability artifact is the reusable, typed representation of a successful workflow.
+A capability artifact is the typed, reusable representation of a successful discovered workflow.
 
-It is deliberately separate from the discovery trace.
-
-The artifact records:
-
-- Capability identity and version.
-- Typed inputs and outputs.
-- Ordered executable steps.
-- Semantic target specifications.
-- Preconditions, postconditions, and success conditions.
-- Known business outcomes.
-- Risk metadata.
-- Provenance back to the discovery run.
-
-Invocation-specific values such as the discovered member name or returned balance are parameterized instead of being persisted as reusable workflow data.
-
-The preserved example capability is:
+The preserved capability is:
 
 ```text
 lookup_savings_balance
 ```
+
+It declares:
+
+```text
+input:
+  memberName: string
+
+output:
+  savingsBalance: currency
+```
+
+The artifact also contains ordered steps, semantic targets, conditions, known business outcomes, risk metadata, and provenance.
+
+Invocation-specific values are passed at replay time rather than hard-coded into the reusable workflow.
 
 ## Compile the artifact
 
@@ -111,79 +112,208 @@ npm run compile-artifact -- `
   --config config/capabilities/lookup-savings-balance.json
 ```
 
-The command prints:
-
-```text
-Capability
-Version
-Inputs
-Outputs
-Step count
-Risk
-Stored path
-SHA-256
-```
-
-The resulting artifact is stored at:
+The base artifact is stored at:
 
 ```text
 artifacts/lookup_savings_balance/1.0.0.json
 ```
 
-Its integrity hash is stored at:
+Its SHA-256 sidecar is:
 
 ```text
 artifacts/lookup_savings_balance/1.0.0.sha256
 ```
 
-Compilation evidence is preserved under:
+Replay scenarios that include known business outcomes and recovery use the compatible patch artifact:
 
 ```text
-evidence/artifact-compilation/
+artifacts/lookup_savings_balance/1.0.1.json
+artifacts/lookup_savings_balance/1.0.1.sha256
 ```
 
-## Artifact versioning
+Persisted capability versions are immutable.
 
-Capability versions use semantic versioning.
+## Replay a capability
 
-Persisted versions are immutable. A different artifact cannot overwrite an existing capability version.
+Replay is deterministic and does not invoke an LLM for decisions.
 
-The compile CLI may reuse an existing version only when its deterministic serialized content is identical.
+The replay entry point is the typed `ReplayEngine` request:
+
+```ts
+await engine.runOrderedSteps({
+  capabilityId: 'lookup_savings_balance',
+  version: '1.0.0',
+  inputs: {
+    memberName: 'Alex Morgan',
+  },
+  target: {
+    entryUrl: 'http://127.0.0.1:3000/member-search',
+  },
+  options: {
+    timeoutMs: 10_000,
+  },
+});
+```
+
+Inputs are supplied through the `inputs` object.
+
+For example:
+
+```ts
+inputs: {
+  memberName: 'Alex Morgan',
+}
+```
+
+Replay validates declared inputs before executing browser steps. Input references in the artifact are bound to the supplied invocation values in memory; the persisted artifact is not modified.
+
+## Run the success scenario
+
+Runs the real capability against the real Playwright-backed demo UI:
+
+```sh
+npx vitest run tests/integration/replay-real-success.test.ts
+```
+
+Expected result:
+
+```text
+status: success
+stepsExecuted: 4
+savingsBalance: $12,840.50
+```
+
+Frozen reviewer evidence:
+
+```text
+evidence/replay-success/
+```
+
+## Run the business-outcome scenario
+
+```sh
+npx vitest run tests/integration/replay-real-business-outcome.test.ts
+```
+
+This invokes the capability with an unknown synthetic member.
+
+Expected result:
+
+```text
+status: business_outcome
+code: MEMBER_NOT_FOUND
+```
+
+`MEMBER_NOT_FOUND` is treated as an expected business result rather than a system failure.
+
+Frozen reviewer evidence:
+
+```text
+evidence/replay-member-not-found/
+```
+
+## Run the recovery scenario
+
+```sh
+npx vitest run tests/integration/replay-real-recovery.test.ts
+```
+
+This runs the artifact against the known-interstitial demo scenario.
+
+Expected flow:
+
+```text
+known interstitial detected
+-> artifact-authorized bounded recovery
+-> interstitial dismissed
+-> replay resumes
+-> success
+```
+
+Frozen reviewer evidence:
+
+```text
+evidence/replay-recovery/
+```
+
+## Run the hard-failure scenario
+
+```sh
+npx vitest run tests/integration/replay-real-hard-failure.test.ts
+```
+
+This runs against the injected application-error scenario.
+
+Expected result:
+
+```text
+status: failure
+code: APPLICATION_ERROR
+stepId: enter-member-search
+```
+
+Failure evidence includes structured expected/observed context and a screenshot.
+
+Frozen reviewer evidence:
+
+```text
+evidence/replay-failure/
+```
+
+## Regenerate frozen replay evidence
+
+Run all four reviewer replay scenarios and regenerate their evidence packages:
+
+```sh
+npm run freeze-replay-evidence
+```
+
+This produces:
+
+```text
+evidence/
+├── replay-success/
+├── replay-member-not-found/
+├── replay-recovery/
+└── replay-failure/
+```
+
+Each frozen package contains sanitized run metadata, structured events, the terminal result, and SHA-256 integrity hashes. The hard-failure package also includes screenshot evidence.
 
 ## Inspect the artifact
-
-The artifact is plain JSON and can be reviewed directly:
 
 ```powershell
 Get-Content `
   .\artifacts\lookup_savings_balance\1.0.0.json
 ```
 
-From that file alone a reviewer can determine:
+From the artifact alone a reviewer can determine:
 
 - What the capability does.
-- What input it requires.
-- What output it returns.
-- Which steps it performs.
-- How UI targets are identified.
+- Which typed inputs it requires.
+- Which typed outputs it returns.
+- Which ordered steps it executes.
+- How controls are targeted.
 - Which business outcomes are recognized.
-- What proves successful completion.
-- What risk metadata applies.
+- Which conditions define successful execution.
+- Which risk metadata applies.
 - Which discovery run produced it.
 
-## Run without OpenAI
+## Run discovery without OpenAI
 
-The deterministic scripted model exercises discovery without calling OpenAI:
+The scripted discovery model exercises the discovery loop without calling OpenAI:
 
 ```sh
 npx vitest run tests/integration/scripted-discovery-engine.test.ts
 ```
 
-Runtime scenario coverage:
+Runtime discovery scenario coverage:
 
 ```sh
 npx vitest run tests/integration/discovery-scenarios.test.ts
 ```
+
+Deterministic replay itself never uses OpenAI.
 
 ## Verify
 
@@ -208,15 +338,20 @@ LLM decision
 -> surface execution
 ```
 
-Only policy-approved actions reach execution.
+Deterministic replay follows the persisted artifact rather than asking a model for the next action.
 
 Additional guarantees include:
 
-- Ambiguous targets are never resolved by choosing the first match.
-- Risk classification is system-authoritative.
-- Discovery execution is bounded by steps, timeout, and repeated-state detection.
-- Artifact persistence performs schema, semantic, and security validation.
-- Secrets, raw model responses, session state, runtime handles, and invocation-specific values are excluded from reusable artifacts.
-- Stored artifacts use deterministic serialization and versioned immutable persistence.
+- Every actionable replay step is policy checked.
+- Allowed origins, routes, actions, and risk levels are explicit.
+- Runtime risk cannot downgrade artifact or system risk.
+- Ambiguous targets fail safely.
+- Replay steps execute in persisted artifact order.
+- Declared inputs are validated before execution.
+- Known business outcomes are distinct from failures.
+- Known recovery is bounded and artifact-authorized.
+- Application failures stop replay with structured evidence.
+- Secrets, raw model responses, session state, browser handles, and invocation-specific values are excluded from reusable artifacts.
+- Reviewer evidence is sanitized before persistence.
 
-See [REPORT.md](./REPORT.md) for the design decisions and deliberate cuts.
+See [REPORT.md](./REPORT.md) for architecture decisions, trade-offs, escalation design, safety boundaries, and deliberate cuts.

@@ -6,48 +6,53 @@ The main boundaries are:
 
 - `DiscoveryEngine` runs the bounded LLM-guided observe, decide, authorize, and act loop.
 - `DiscoveryDecisionModel` isolates LLM participation.
+- `ArtifactCompiler` converts a successful discovery run into a reusable capability.
+- `ArtifactStore` validates and persists immutable artifact versions.
+- `ReplayEngine` executes persisted artifact steps deterministically without an LLM.
+- `PolicyEngine` performs deterministic authorization during discovery and replay.
+- `TargetResolver` resolves ordered semantic targets.
 - `SurfaceAdapter` separates orchestration from concrete UI technology.
 - `PlaywrightSurface` implements browser interaction.
-- `PolicyEngine` performs deterministic authorization.
-- `TargetResolver` resolves ordered semantic targets.
 - `SessionManager` owns the live session and actor ownership.
-- `ArtifactCompiler` converts a successful discovery run into a reusable capability artifact.
-- `ArtifactStore` validates and persists immutable artifact versions.
+- Evidence components persist sanitized structured events and richer failure evidence.
 
-The core separation is:
+The core execution model is:
 
 ```text
 probabilistic discovery
--> deterministic compiler
+-> deterministic artifact compilation
 -> reusable capability artifact
+-> deterministic replay
 ```
 
-The model discovers the workflow, but it does not define the persisted runtime contract directly.
+The LLM discovers a workflow. The persisted artifact becomes the production execution contract.
+
+Replay does not ask a model what to do next. It loads a validated artifact, binds invocation inputs, executes its ordered steps, re-evaluates policy, verifies conditions, extracts declared outputs, and returns a structured terminal result.
 
 # 2. Artifact schema
 
-The capability artifact is not the discovery trace.
+The capability artifact is deliberately separate from the discovery trace.
 
-The discovery trace describes what happened during one run. It may contain observations, decisions, policy results, target-resolution attempts, action results, and extracted working values.
+The discovery trace describes what happened during one run. It may contain observations, model decisions, policy results, target-resolution attempts, action results, and temporary extracted values.
 
-The artifact contains only the reusable workflow required for future deterministic execution.
+The artifact contains only reusable workflow information required for future deterministic execution.
 
-The artifact includes:
+It includes:
 
 - Stable capability identity and semantic version.
 - Application compatibility metadata.
 - Typed required and optional inputs.
 - Typed outputs.
-- Ordered steps.
+- Ordered executable steps.
 - Semantic target specifications.
 - Preconditions and postconditions.
 - Wait and recovery metadata.
 - Known business outcomes.
-- Success conditions.
+- A final success condition.
 - Risk metadata.
 - Provenance.
 
-Inputs and outputs are explicit contracts. For the example capability:
+For the example capability:
 
 ```text
 input:
@@ -57,11 +62,11 @@ output:
 savingsBalance:currency
 ```
 
-Concrete discovery values are parameterized. The reusable artifact therefore stores an input reference instead of the discovered member name and an output binding instead of the returned balance.
+Invocation-specific discovery values are parameterized. The reusable artifact stores an input reference rather than `Alex Morgan`, and an output binding rather than the discovered balance.
 
-Targets are also normalized before persistence. The artifact stores reusable semantic descriptions such as accessible role/name relationships and structural table queries rather than runtime element handles or discovery-specific model prose.
+Targets are normalized before persistence. Runtime browser handles and discovery-specific model prose are excluded.
 
-The Savings lookup demonstrates structural targeting:
+The Savings lookup uses structural targeting:
 
 ```text
 Accounts table
@@ -69,49 +74,99 @@ Accounts table
 -> Current Balance column
 ```
 
-This does not depend on recorded row or column positions.
+This avoids depending on recorded row indexes, column indexes, or transient browser handles.
+
+Persisted capability versions are immutable. Compatible improvements such as recovery metadata are published as new semantic versions rather than silently replacing an existing artifact.
 
 # 3. Determinism & error handling
 
-Discovery is intentionally probabilistic because the LLM chooses each next action.
+Artifact step order is authoritative during replay.
 
-Artifact compilation is deterministic.
+Replay does not use an LLM to choose, reorder, skip, or synthesize actions. Given an artifact and invocation inputs, execution follows the persisted step sequence.
 
-Given the same successful discovery source and the same compile configuration, the compiler produces the same serialized capability artifact and SHA-256 hash.
-
-Compilation performs:
+The deterministic path is:
 
 ```text
-successful discovery path extraction
--> parameterization
--> target normalization
--> artifact construction
--> schema validation
--> semantic validation
--> security validation
--> deterministic serialization
--> versioned persistence
+load artifact
+-> validate invocation inputs
+-> bind input references
+-> execute next persisted step
+-> evaluate policy
+-> resolve semantic target
+-> verify preconditions
+-> perform action
+-> extract declared output if applicable
+-> verify postconditions
+-> continue in artifact order
+-> verify final success condition
+-> return structured result
 ```
 
-Only successful, policy-approved discovery actions are eligible for the artifact. Failed attempts, retries, completion decisions, model-control events, and unrelated runtime noise are not compiled into executable steps.
+Targeting is semantic rather than based on replaying recorded browser handles. `TargetResolver` uses the artifact's ordered target strategies and fails safely when no unique target can be established.
 
-Stored capability versions are immutable. A different artifact cannot silently replace an existing version.
+Steps use explicit preconditions and postconditions. Replay therefore verifies required state instead of assuming that a previous click or navigation succeeded.
 
-The artifact also declares explicit success conditions and known business outcomes so future replay does not have to infer success from the final page state.
+Waits are bounded. Condition polling uses explicit timeouts and polling intervals; replay does not wait indefinitely for a surface to become ready.
 
-Deterministic replay itself is intentionally deferred to the next phase.
+The artifact also defines a final success condition. The successful replay path verifies the declared output and final UI checkpoint rather than treating completion of the last action alone as proof of success.
+
+Replay distinguishes five result classes:
+
+```text
+success
+business outcome
+recoverable condition
+hard failure
+intervention required
+```
+
+`success` means the capability completed with its required outputs and checkpoints satisfied.
+
+A `business outcome` is an expected domain result that the caller needs to know about, not a system failure. For example:
+
+```text
+MEMBER_NOT_FOUND
+```
+
+A `recoverable condition` is a known runtime state for which the artifact explicitly declares deterministic recovery.
+
+A `hard failure` stops execution and returns a typed error. Failure evidence records the failing step and, where available, expected state, observed state, and richer evidence such as a screenshot.
+
+`intervention_required` means automation cannot safely continue without transferring control to a human.
+
+Recovery is deliberately narrow:
+
+```text
+known condition
++ artifact-authorized recovery
++ bounded attempt budget
+= deterministic recovery
+```
+
+Replay does not improvise recovery with an LLM. Unknown conditions, exhausted recovery, ambiguous targets, policy blocks, unrecoverable session state, and application failures do not trigger open-ended autonomous behavior.
+
+The preserved replay evidence demonstrates:
+
+```text
+normal success
+MEMBER_NOT_FOUND business outcome
+known-interstitial recovery followed by success
+APPLICATION_ERROR hard failure with screenshot evidence
+```
 
 # 4. Heterogeneity & multi-tenant
 
 The workflow contract is separated from Playwright through `SurfaceAdapter`.
 
-Artifacts describe semantic intent rather than browser-specific runtime handles. Target strategies can include accessible role/name relationships, labels, visible text, structural relationships, and explicit selector fallbacks.
+Artifacts describe semantic intent rather than browser-specific runtime handles. Target strategies can represent accessible role/name relationships, labels, visible text, structural relationships, and explicit fallback strategies.
 
-A future browser, legacy-web, desktop, accessibility-tree, or screenshot-based adapter can resolve the same artifact-level target intent using its own surface implementation.
+A legacy-web, desktop, accessibility-tree, or screenshot-based adapter could implement the same surface contract while resolving artifact-level target intent using technology appropriate to that surface.
 
-Application compatibility metadata is explicit in the artifact so future vendor versions or tenant-specific variants can be checked rather than silently assumed compatible.
+Application compatibility metadata is explicit so vendor versions and tenant-specific variants can be checked rather than silently assumed compatible.
 
-Full multi-tenant specialization and drift management are not implemented.
+For multi-tenant deployment, the intended model is a shared base capability for a vendor/application family with controlled compatibility metadata and versioned specialization where tenant differences require it.
+
+Full cross-tenant specialization, drift detection, and desktop adapters are not implemented in this take-home.
 
 # 5. Escalation & handoff
 
@@ -124,38 +179,48 @@ REPLAY
 HUMAN
 ```
 
-Discovery can produce `intervention_required` when policy requires a human, the model explicitly escalates, or the runtime cannot safely continue.
+Only one actor owns a live session at a time.
 
-The session layer already supports preserving the same browser context while ownership transfers between automation and a human.
+Discovery or replay can produce `intervention_required` when automation cannot safely proceed, including policy-required human involvement or an unrecoverable deterministic condition.
 
-A complete operator interface and production resume-after-human workflow are intentionally deferred.
+The session architecture is designed so intervention refers to the existing live browser session rather than creating a new one. Ownership can move from automation to `HUMAN`, preventing automated actions while the human owns the session.
+
+The complete production operator console and end-user co-browsing experience are deliberately outside the take-home scope. The important seam is explicit ownership, preserved session context, and a typed intervention result rather than silently continuing automation.
 
 # 6. Safety
 
-Policy and artifact persistence both fail closed.
+Artifacts do not bypass policy.
 
-During discovery:
+A capability artifact describes what replay intends to do, but every actionable replay step is authorized again at runtime.
+
+The replay safety path is:
 
 ```text
-model decision
--> schema validation
--> system risk classification
+artifact step
+-> runtime risk classification / stored-risk enforcement
 -> policy evaluation
--> target resolution
--> execution
+-> semantic target resolution
+-> surface execution
 ```
 
-Only `ALLOW` reaches execution.
+An artifact cannot make an otherwise disallowed action permissible.
 
-Before artifact persistence, the compiler and store enforce:
+Policy evaluates allowed origins, routes, action kinds, and risk rules. Runtime enforcement also prevents a stored artifact from downgrading system-authoritative risk.
 
-- Schema validation.
-- Semantic validation.
-- Security validation.
-- Deterministic serialization.
-- Immutable versioned persistence.
+Only an allowed action reaches the surface.
 
-The persisted artifact excludes:
+Other fail-closed behaviors include:
+
+- Ambiguous targets are not resolved by choosing the first match.
+- Invalid invocation inputs fail before normal browser execution.
+- Recovery is limited to known, artifact-authorized conditions.
+- Unknown or exhausted recovery can require intervention.
+- Application errors stop replay rather than being interpreted as normal state.
+- Replay contains no LLM decision loop.
+
+Artifact persistence also performs schema, semantic, and security validation.
+
+Reusable artifacts exclude:
 
 - API keys and secrets.
 - Cookies and authentication state.
@@ -165,32 +230,42 @@ The persisted artifact excludes:
 - Raw DOM state.
 - Session state.
 - Screenshots and trace payloads.
-- Invocation-specific member names and financial values.
+- Invocation-specific member names and returned financial values.
 
-The artifact retains provenance without retaining the sensitive discovery transcript. The example artifact records the discovery run identifier, compiler version, source goal, and compile timestamp.
+Evidence is sanitized before persistence. Hard-failure evidence can include screenshots because the demo uses synthetic fixture data.
 
 # 7. Cuts
 
-The implemented vertical slice currently includes:
+The implemented vertical slice includes:
 
 ```text
 natural-language goal
 -> genuine LLM-driven discovery
 -> policy-controlled UI execution
--> successful-run evidence
+-> successful discovery evidence
 -> deterministic artifact compilation
 -> typed parameterized capability
--> validated versioned persistence
--> integrity hash and compilation evidence
+-> immutable versioned persistence
+-> deterministic replay without an LLM
+-> runtime input binding
+-> semantic target resolution
+-> replay policy enforcement
+-> bounded conditions and recovery
+-> business-outcome handling
+-> hard-failure detection
+-> structured replay evidence
 ```
 
-The following remain intentionally deferred:
+The replay evidence includes real Playwright executions for success, a known business outcome, deterministic recovery, and a hard application failure.
 
-- Deterministic replay without the LLM.
-- Replay checkpoints and recovery execution.
-- Replay evidence and exceptional-state demonstration.
-- Full human operator UI and production takeover workflow.
-- Cross-tenant specialization and drift management.
-- Artifact approval workflow.
+Deliberate cuts are:
 
-These are deferred at clean architectural boundaries rather than represented as implemented features.
+- A full human operator UI / co-browsing console.
+- Production-grade resume-after-human UX.
+- Desktop and accessibility-tree surface implementations.
+- Cross-tenant artifact specialization and automated drift management.
+- Distributed scheduling or browser-farm infrastructure.
+- Artifact approval workflows.
+- LLM-assisted replay fallback.
+
+These are left at explicit architectural seams rather than represented as implemented functionality. The take-home focuses on the load-bearing path: genuine discovery, a deliberate reusable artifact contract, deterministic policy-controlled replay, explicit runtime outcomes, and reviewer-verifiable evidence.
