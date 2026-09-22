@@ -67,3 +67,7 @@ export type {
   InterventionStore,
   StoredIntervention,
 } from './intervention-store.js';
+
+export { InterventionController } from './intervention-controller.js';
+
+export type { CreateAndPauseInterventionInput } from './intervention-controller.js';
