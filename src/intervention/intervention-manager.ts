@@ -130,6 +130,10 @@ export class InterventionManager {
     return request;
   }
 
+  async list(): Promise<readonly StoredIntervention[]> {
+    return this.store.list();
+  }
+
   async get(interventionId: string): Promise<StoredIntervention> {
     const record = await this.store.get(interventionId);
 

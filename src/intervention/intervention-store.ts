@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
 import { z } from 'zod';
@@ -47,11 +47,25 @@ export interface InterventionStore {
 
   get(interventionId: string): Promise<StoredIntervention | undefined>;
 
+  list(): Promise<readonly StoredIntervention[]>;
+
   update(record: StoredIntervention): Promise<void>;
 }
 
 function cloneRecord(record: StoredIntervention): StoredIntervention {
   return structuredClone(record);
+}
+
+function sortRecords(records: readonly StoredIntervention[]): StoredIntervention[] {
+  return [...records].sort((left, right) => {
+    const byCreatedAt = left.request.createdAt.localeCompare(right.request.createdAt);
+
+    if (byCreatedAt !== 0) {
+      return byCreatedAt;
+    }
+
+    return left.request.id.localeCompare(right.request.id);
+  });
 }
 
 export class InMemoryInterventionStore implements InterventionStore {
@@ -73,6 +87,10 @@ export class InMemoryInterventionStore implements InterventionStore {
     const record = this.records.get(interventionId);
 
     return Promise.resolve(record === undefined ? undefined : cloneRecord(record));
+  }
+
+  list(): Promise<readonly StoredIntervention[]> {
+    return Promise.resolve(sortRecords([...this.records.values()].map(cloneRecord)));
   }
 
   update(record: StoredIntervention): Promise<void> {
@@ -109,8 +127,9 @@ export class FileSystemInterventionStore implements InterventionStore {
     const directory = this.interventionDirectory(parsed.request.id);
 
     /*
-     * recursive:false intentionally fails if this intervention
-     * already exists. We never silently overwrite create().
+     * recursive:false intentionally fails if this
+     * intervention already exists. We never silently
+     * overwrite create().
      */
     await mkdir(directory);
 
@@ -143,6 +162,48 @@ export class FileSystemInterventionStore implements InterventionStore {
 
       throw error;
     }
+  }
+
+  async list(): Promise<readonly StoredIntervention[]> {
+    let entries;
+
+    try {
+      entries = await readdir(this.rootDirectory, {
+        withFileTypes: true,
+      });
+    } catch (error) {
+      if (isNodeError(error) && error.code === 'ENOENT') {
+        return [];
+      }
+
+      throw error;
+    }
+
+    const records: StoredIntervention[] = [];
+
+    for (const entry of entries) {
+      if (!entry.isDirectory()) {
+        continue;
+      }
+
+      const path = resolve(this.rootDirectory, entry.name, 'intervention.json');
+
+      try {
+        const contents = await readFile(path, 'utf8');
+
+        const parsedJson: unknown = JSON.parse(contents);
+
+        records.push(storedInterventionSchema.parse(parsedJson));
+      } catch (error) {
+        if (isNodeError(error) && error.code === 'ENOENT') {
+          continue;
+        }
+
+        throw error;
+      }
+    }
+
+    return sortRecords(records);
   }
 
   async update(record: StoredIntervention): Promise<void> {

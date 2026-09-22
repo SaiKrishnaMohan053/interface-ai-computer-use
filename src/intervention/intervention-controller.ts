@@ -7,6 +7,8 @@ import type {
   InterventionManager,
 } from './intervention-manager.js';
 
+import type { LiveInterventionRegistry } from './live-intervention-registry.js';
+
 import type { InterventionRequest } from './intervention-types.js';
 
 export interface CreateAndPauseInterventionInput extends Omit<
@@ -29,7 +31,11 @@ export interface AcquireHumanControlInput {
 }
 
 export class InterventionController {
-  constructor(private readonly manager: InterventionManager) {}
+  constructor(
+    private readonly manager: InterventionManager,
+
+    private readonly liveRegistry?: LiveInterventionRegistry,
+  ) {}
 
   async createAndPause(input: CreateAndPauseInterventionInput): Promise<InterventionRequest> {
     const owner = this.requireAutomationOwner(input.context.sessionManager.owner);
@@ -88,6 +94,20 @@ export class InterventionController {
     input.context.sessionManager.pause(owner);
 
     await this.manager.transition(intervention.id, 'WAITING_FOR_HUMAN');
+
+    /*
+     * The registry is process-local only.
+     *
+     * It deliberately keeps the live CoordinatedRunContext
+     * out of persisted intervention records while allowing
+     * the operator control plane to recover the exact
+     * SessionManager / BrowserContext / Page later.
+     */
+    this.liveRegistry?.register({
+      interventionId: intervention.id,
+
+      context: input.context,
+    });
 
     return (await this.manager.get(intervention.id)).request;
   }

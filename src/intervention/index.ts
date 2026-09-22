@@ -75,3 +75,31 @@ export type {
   CreateAndPauseInterventionInput,
   AcquireHumanControlInput,
 } from './intervention-controller.js';
+
+export { LiveInterventionRegistry } from './live-intervention-registry.js';
+
+export type { LiveInterventionRegistration } from './live-intervention-registry.js';
+
+export {
+  OPERATOR_COMMAND_KINDS,
+  operatorCommandKindSchema,
+  operatorCommandSchema,
+  operatorInterventionViewSchema,
+  parseOperatorCommand,
+  parseOperatorInterventionView,
+  toOperatorInterventionView,
+} from './operator-control-types.js';
+
+export type {
+  OperatorCommand,
+  OperatorCommandKind,
+  OperatorInterventionView,
+} from './operator-control-types.js';
+
+export { OperatorControlServer } from './operator-control-server.js';
+
+export type {
+  OperatorControlServerAddress,
+  OperatorControlServerDependencies,
+  OperatorControlServerOptions,
+} from './operator-control-server.js';
