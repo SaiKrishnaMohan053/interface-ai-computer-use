@@ -197,13 +197,13 @@ describe('resume and abort human handoff audit', () => {
 
     expect(result.status).toBe('ABORTED');
 
-    expect(fixture.session.state).toBe('CLOSED');
+    expect(fixture.session.state).toBe('PAUSED');
 
     expect(fixture.session.owner).toBe('NONE');
 
-    expect(fixture.session.closeCalls).toBe(1);
+    expect(fixture.session.closeCalls).toBe(0);
 
-    expect(fixture.registry.has(fixture.interventionId)).toBe(false);
+    expect(fixture.registry.has(fixture.interventionId)).toBe(true);
 
     const stored = await fixture.manager.get(fixture.interventionId);
 

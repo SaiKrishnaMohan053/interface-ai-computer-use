@@ -119,3 +119,10 @@ export type {
   InterventionAuditEvent,
   InterventionAuditEventType,
 } from './intervention-audit.js';
+
+export { finalizeHumanAbort } from './intervention-abort-finalizer.js';
+
+export type {
+  FinalizeHumanAbortInput,
+  HumanAbortCoordinator,
+} from './intervention-abort-finalizer.js';

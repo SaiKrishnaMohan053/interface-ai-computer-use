@@ -454,7 +454,7 @@ describe('risky irreversible action human handoff', () => {
 
     expect(aborted.status).toBe('ABORTED');
 
-    expect(session.state).toBe('CLOSED');
+    expect(session.state).toBe('PAUSED');
 
     expect(session.owner).toBe('NONE');
 

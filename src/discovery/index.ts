@@ -211,3 +211,7 @@ export type {
   DiscoveryEngineOptions,
   DiscoveryRunOptions,
 } from './discovery-engine.js';
+
+export { continueDiscoveryAfterHuman } from './discovery-resume.js';
+
+export type { DiscoveryResumeInput, DiscoveryResumeResult } from './discovery-resume.js';

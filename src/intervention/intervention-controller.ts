@@ -341,10 +341,6 @@ export class InterventionController {
 
     const aborted = await this.manager.transition(input.interventionId, 'ABORTED');
 
-    this.liveRegistry?.remove(input.interventionId);
-
-    await session.close();
-
     return aborted;
   }
 
