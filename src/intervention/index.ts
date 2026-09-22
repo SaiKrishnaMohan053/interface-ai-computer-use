@@ -52,6 +52,7 @@ export type { TerminalInterventionStatus } from './intervention-state-machine.js
 export { InterventionManager } from './intervention-manager.js';
 
 export type {
+  AcquireInterventionInput,
   CreateInterventionInput,
   InterventionManagerDependencies,
 } from './intervention-manager.js';
@@ -72,5 +73,5 @@ export { InterventionController } from './intervention-controller.js';
 
 export type {
   CreateAndPauseInterventionInput,
-  TransferInterventionToHumanInput,
+  AcquireHumanControlInput,
 } from './intervention-controller.js';

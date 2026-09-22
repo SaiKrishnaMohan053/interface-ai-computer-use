@@ -26,7 +26,9 @@ const identifierSchema = z.string().trim().min(1).max(500);
 
 const optionalIdentifierSchema = identifierSchema.optional();
 
-const timestampSchema = z.iso.datetime({ offset: true });
+const timestampSchema = z.iso.datetime({
+  offset: true,
+});
 
 const messageSchema = z.string().trim().min(1).max(10_000);
 
@@ -52,6 +54,7 @@ export const interventionContextSchema = z
     source: interventionSourceSchema,
 
     capabilityId: optionalIdentifierSchema,
+
     capabilityVersion: optionalIdentifierSchema,
 
     goal: z.string().trim().min(1).max(4_000).optional(),
@@ -81,6 +84,7 @@ export const interventionRequestSchema = z
     source: interventionSourceSchema,
 
     capabilityId: optionalIdentifierSchema,
+
     capabilityVersion: optionalIdentifierSchema,
 
     goal: z.string().trim().min(1).max(4_000).optional(),
@@ -153,6 +157,18 @@ export const interventionResolutionSchema = z
 
 export type InterventionResolution = z.infer<typeof interventionResolutionSchema>;
 
+export const interventionAcquisitionSchema = z
+  .object({
+    acquisitionId: identifierSchema,
+
+    acquiredAt: timestampSchema,
+
+    operatorId: optionalIdentifierSchema,
+  })
+  .strict();
+
+export type InterventionAcquisition = z.infer<typeof interventionAcquisitionSchema>;
+
 export const HUMAN_ACTION_KINDS = [
   'CONTROL_ACQUIRED',
   'MANUAL_STEP',
@@ -203,6 +219,10 @@ export function parseInterventionContext(value: unknown): InterventionContext {
 
 export function parseInterventionResolution(value: unknown): InterventionResolution {
   return interventionResolutionSchema.parse(value);
+}
+
+export function parseInterventionAcquisition(value: unknown): InterventionAcquisition {
+  return interventionAcquisitionSchema.parse(value);
 }
 
 export function parseHumanActionRecord(value: unknown): HumanActionRecord {

@@ -8,18 +8,22 @@ import { sanitizeForPersistence, serializeSanitized } from '../security/index.js
 
 import {
   humanActionRecordSchema,
+  interventionAcquisitionSchema,
   interventionRequestSchema,
   interventionResolutionSchema,
 } from './intervention-types.js';
 
 import type {
   HumanActionRecord,
+  InterventionAcquisition,
   InterventionRequest,
   InterventionResolution,
 } from './intervention-types.js';
 
 export interface StoredIntervention {
   request: InterventionRequest;
+
+  acquisition?: InterventionAcquisition | undefined;
 
   resolution?: InterventionResolution | undefined;
 
@@ -29,6 +33,8 @@ export interface StoredIntervention {
 export const storedInterventionSchema = z
   .object({
     request: interventionRequestSchema,
+
+    acquisition: interventionAcquisitionSchema.optional(),
 
     resolution: interventionResolutionSchema.optional(),
 

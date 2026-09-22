@@ -20,6 +20,8 @@ class FakeSessionManager {
 
   pauseCalls = 0;
 
+  transferCalls = 0;
+
   constructor(owner: 'DISCOVERY' | 'REPLAY' | 'HUMAN' | 'NONE' = 'DISCOVERY') {
     this.owner = owner;
   }
@@ -53,6 +55,7 @@ class FakeSessionManager {
       throw new Error('Ownership transfer requires a new owner');
     }
 
+    this.transferCalls += 1;
     this.owner = to;
   }
 }
@@ -60,23 +63,29 @@ class FakeSessionManager {
 function coordinatedContext(session: FakeSessionManager): CoordinatedRunContext<unknown> {
   /*
    * InterventionController only depends on SessionManager identity,
-   * owner, and pause semantics. Browser/surface ownership stays with
-   * SessionManager and is deliberately outside this unit test.
+   * state, owner, pause, and ownership-transfer semantics here.
+   * Real BrowserContext/Page continuity is covered by the
+   * SessionManager integration tests.
    */
   return {
     runId: 'run-1',
+
     mode: session.owner === 'REPLAY' ? 'REPLAY' : 'DISCOVERY',
+
     sessionManager: session as unknown as SessionManager,
   } as unknown as CoordinatedRunContext<unknown>;
 }
 
 function fixture(owner: 'DISCOVERY' | 'REPLAY' | 'HUMAN' | 'NONE' = 'DISCOVERY') {
   const store = new InMemoryInterventionStore();
+
   const manager = new InterventionManager({
     store,
     now: () => NOW,
   });
+
   const controller = new InterventionController(manager);
+
   const session = new FakeSessionManager(owner);
 
   return {
@@ -113,13 +122,19 @@ describe('InterventionController', () => {
     });
 
     expect(test.session.state).toBe('PAUSED');
+
     expect(test.session.owner).toBe('DISCOVERY');
+
     expect(test.session.pauseCalls).toBe(1);
 
     const stored = await test.manager.get('intervention-1');
 
     expect(stored.request).toEqual(intervention);
+
     expect(stored.humanActions).toEqual([]);
+
+    expect(stored.acquisition).toBeUndefined();
+
     expect(stored.resolution).toBeUndefined();
   });
 
@@ -149,7 +164,9 @@ describe('InterventionController', () => {
     });
 
     expect(test.session.state).toBe('PAUSED');
+
     expect(test.session.owner).toBe('REPLAY');
+
     expect(test.session.pauseCalls).toBe(1);
   });
 
@@ -191,7 +208,9 @@ describe('InterventionController', () => {
     });
 
     const controller = new InterventionController(manager);
+
     const session = new FakeSessionManager('DISCOVERY');
+
     const context = coordinatedContext(session);
 
     await manager.create({
@@ -216,7 +235,9 @@ describe('InterventionController', () => {
     ).rejects.toBeDefined();
 
     expect(session.state).toBe('ACTIVE');
+
     expect(session.owner).toBe('DISCOVERY');
+
     expect(session.pauseCalls).toBe(0);
   });
 
@@ -240,6 +261,7 @@ describe('InterventionController', () => {
       );
 
       expect(test.session.state).toBe('ACTIVE');
+
       expect(test.session.pauseCalls).toBe(0);
 
       await expect(test.store.get(`intervention-${owner.toLowerCase()}`)).resolves.toBeUndefined();
@@ -261,14 +283,10 @@ describe('InterventionController', () => {
 
     expect(test.session.state).toBe('PAUSED');
 
-    /*
-     * 5.6 only pauses. DISCOVERY -> HUMAN ownership transfer
-     * belongs to the later ownership-transfer subphase.
-     */
     expect(test.session.owner).toBe('DISCOVERY');
   });
 
-  it('transfers paused discovery ownership to HUMAN', async () => {
+  it('explicitly acquires paused discovery control for HUMAN', async () => {
     const test = fixture('DISCOVERY');
 
     await test.controller.createAndPause({
@@ -281,17 +299,36 @@ describe('InterventionController', () => {
       evidenceRefs: [],
     });
 
-    const acquired = await test.controller.transferToHuman({
+    const acquired = await test.controller.acquireHumanControl({
       interventionId: 'intervention-human-1',
+
       context: test.context,
+
+      acquisitionId: 'acquisition-1',
+
+      operatorId: 'operator-1',
     });
 
     expect(acquired.status).toBe('ACQUIRED');
+
     expect(test.session.state).toBe('PAUSED');
+
     expect(test.session.owner).toBe('HUMAN');
+
+    expect(test.session.transferCalls).toBe(1);
+
+    const stored = await test.manager.get('intervention-human-1');
+
+    expect(stored.acquisition).toEqual({
+      acquisitionId: 'acquisition-1',
+      acquiredAt: NOW,
+      operatorId: 'operator-1',
+    });
+
+    expect(stored.humanActions.map((action) => action.kind)).toContain('CONTROL_ACQUIRED');
   });
 
-  it('transfers paused replay ownership to HUMAN', async () => {
+  it('explicitly acquires paused replay control for HUMAN', async () => {
     const test = fixture('REPLAY');
 
     await test.controller.createAndPause({
@@ -304,13 +341,85 @@ describe('InterventionController', () => {
       evidenceRefs: [],
     });
 
-    const acquired = await test.controller.transferToHuman({
+    const acquired = await test.controller.acquireHumanControl({
       interventionId: 'intervention-human-2',
+
       context: test.context,
+
+      acquisitionId: 'acquisition-2',
     });
 
     expect(acquired.status).toBe('ACQUIRED');
+
     expect(test.session.state).toBe('PAUSED');
+
     expect(test.session.owner).toBe('HUMAN');
+  });
+
+  it('rejects a second human acquisition for the same intervention', async () => {
+    const test = fixture('DISCOVERY');
+
+    await test.controller.createAndPause({
+      context: test.context,
+      id: 'intervention-exclusive',
+      source: 'DISCOVERY',
+      reasonCode: 'AUTOMATION_STUCK',
+      reason: 'Human operator is required',
+      observedState: 'Current application state',
+      evidenceRefs: [],
+    });
+
+    await test.controller.acquireHumanControl({
+      interventionId: 'intervention-exclusive',
+      context: test.context,
+      acquisitionId: 'acquisition-a',
+      operatorId: 'operator-a',
+    });
+
+    await expect(
+      test.controller.acquireHumanControl({
+        interventionId: 'intervention-exclusive',
+        context: test.context,
+        acquisitionId: 'acquisition-b',
+        operatorId: 'operator-b',
+      }),
+    ).rejects.toBeDefined();
+
+    const stored = await test.manager.get('intervention-exclusive');
+
+    expect(stored.acquisition?.acquisitionId).toBe('acquisition-a');
+
+    expect(test.session.owner).toBe('HUMAN');
+
+    expect(test.session.transferCalls).toBe(1);
+  });
+
+  it('rejects human acquisition when the intervention belongs to another session', async () => {
+    const test = fixture('DISCOVERY');
+
+    await test.manager.create({
+      id: 'foreign-intervention',
+      sessionId: 'different-session',
+      source: 'DISCOVERY',
+      reasonCode: 'AUTOMATION_STUCK',
+      reason: 'Human intervention required',
+      observedState: 'Current application state',
+    });
+
+    await test.manager.transition('foreign-intervention', 'WAITING_FOR_HUMAN');
+
+    test.session.state = 'PAUSED';
+
+    await expect(
+      test.controller.acquireHumanControl({
+        interventionId: 'foreign-intervention',
+        context: test.context,
+        acquisitionId: 'acquisition-foreign',
+      }),
+    ).rejects.toThrow('is bound to another session');
+
+    expect(test.session.owner).toBe('DISCOVERY');
+
+    expect(test.session.transferCalls).toBe(0);
   });
 });

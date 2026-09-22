@@ -1,7 +1,8 @@
 import {
+  humanActionRecordSchema,
+  interventionAcquisitionSchema,
   interventionRequestSchema,
   interventionResolutionSchema,
-  humanActionRecordSchema,
 } from './intervention-types.js';
 
 import type {
@@ -45,6 +46,16 @@ export interface CreateInterventionInput {
   createdAt?: string;
 }
 
+export interface AcquireInterventionInput {
+  interventionId: string;
+
+  sessionId: string;
+
+  acquisitionId: string;
+
+  operatorId?: string;
+}
+
 export interface InterventionManagerDependencies {
   store: InterventionStore;
 
@@ -74,12 +85,29 @@ export class InterventionManager {
 
       source: input.source,
 
-      capabilityId: input.capabilityId,
-      capabilityVersion: input.capabilityVersion,
+      ...(input.capabilityId === undefined
+        ? {}
+        : {
+            capabilityId: input.capabilityId,
+          }),
 
-      goal: input.goal,
+      ...(input.capabilityVersion === undefined
+        ? {}
+        : {
+            capabilityVersion: input.capabilityVersion,
+          }),
 
-      stepId: input.stepId,
+      ...(input.goal === undefined
+        ? {}
+        : {
+            goal: input.goal,
+          }),
+
+      ...(input.stepId === undefined
+        ? {}
+        : {
+            stepId: input.stepId,
+          }),
 
       reasonCode: input.reasonCode,
 
@@ -131,6 +159,141 @@ export class InterventionManager {
     });
 
     return updatedRequest;
+  }
+
+  async acquire(input: AcquireInterventionInput): Promise<StoredIntervention> {
+    const record = await this.get(input.interventionId);
+
+    if (record.request.sessionId !== input.sessionId) {
+      throw new InterventionError(
+        'INVALID_INTERVENTION',
+        `Intervention ${input.interventionId} is bound to another session`,
+        {
+          interventionId: input.interventionId,
+          expectedSessionId: record.request.sessionId,
+          actualSessionId: input.sessionId,
+        },
+      );
+    }
+
+    if (record.request.status !== 'WAITING_FOR_HUMAN') {
+      throw new InterventionError(
+        'INVALID_INTERVENTION',
+        `Intervention ${input.interventionId} cannot be acquired from status ${record.request.status}`,
+        {
+          interventionId: input.interventionId,
+          status: record.request.status,
+        },
+      );
+    }
+
+    if (record.acquisition !== undefined) {
+      throw new InterventionError(
+        'INVALID_INTERVENTION',
+        `Intervention ${input.interventionId} is already acquired`,
+        {
+          interventionId: input.interventionId,
+          acquisitionId: record.acquisition.acquisitionId,
+        },
+      );
+    }
+
+    const acquiredAt = this.now();
+
+    const acquisition = interventionAcquisitionSchema.parse({
+      acquisitionId: input.acquisitionId,
+
+      acquiredAt,
+
+      ...(input.operatorId === undefined
+        ? {}
+        : {
+            operatorId: input.operatorId,
+          }),
+    });
+
+    assertInterventionTransition(record.request.status, 'ACQUIRED');
+
+    const updatedRequest = interventionRequestSchema.parse({
+      ...record.request,
+      status: 'ACQUIRED',
+    });
+
+    const controlAcquiredAction = humanActionRecordSchema.parse({
+      actionId: input.acquisitionId,
+
+      interventionId: record.request.id,
+
+      sessionId: record.request.sessionId,
+
+      kind: 'CONTROL_ACQUIRED',
+
+      summary: 'Human operator acquired intervention control.',
+
+      occurredAt: acquiredAt,
+
+      evidenceRefs: [],
+
+      details: {
+        acquisitionId: input.acquisitionId,
+      },
+    });
+
+    const updatedRecord: StoredIntervention = {
+      ...record,
+
+      request: updatedRequest,
+
+      acquisition,
+
+      humanActions: [...record.humanActions, controlAcquiredAction],
+    };
+
+    await this.store.update(updatedRecord);
+
+    return updatedRecord;
+  }
+
+  async markInProgress(interventionId: string): Promise<StoredIntervention> {
+    const record = await this.get(interventionId);
+
+    if (record.request.status !== 'ACQUIRED') {
+      throw new InterventionError(
+        'INVALID_INTERVENTION',
+        `Intervention ${interventionId} must be ACQUIRED before entering IN_PROGRESS`,
+        {
+          interventionId,
+          status: record.request.status,
+        },
+      );
+    }
+
+    if (record.acquisition === undefined) {
+      throw new InterventionError(
+        'INVALID_INTERVENTION',
+        `Intervention ${interventionId} has no acquisition record`,
+        {
+          interventionId,
+          status: record.request.status,
+        },
+      );
+    }
+
+    assertInterventionTransition(record.request.status, 'IN_PROGRESS');
+
+    const updatedRequest = interventionRequestSchema.parse({
+      ...record.request,
+      status: 'IN_PROGRESS',
+    });
+
+    const updatedRecord: StoredIntervention = {
+      ...record,
+      request: updatedRequest,
+    };
+
+    await this.store.update(updatedRecord);
+
+    return updatedRecord;
   }
 
   async addEvidenceReferences(
