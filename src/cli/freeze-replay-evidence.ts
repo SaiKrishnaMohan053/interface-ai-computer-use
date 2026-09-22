@@ -28,9 +28,13 @@ type FrozenScenario = 'success' | 'member-not-found' | 'recovery' | 'failure';
 
 interface ScenarioDefinition {
   readonly scenario: FrozenScenario;
+
   readonly directoryName: string;
+
   readonly artifactVersion: '1.0.0' | '1.0.1';
+
   readonly memberName: string;
+
   readonly queryScenario: 'normal' | 'dialog' | 'app-error';
 }
 
@@ -39,30 +43,49 @@ const EVIDENCE_ROOT = resolve('evidence');
 const DEFINITIONS: readonly ScenarioDefinition[] = [
   {
     scenario: 'success',
+
     directoryName: 'replay-success',
+
     artifactVersion: '1.0.0',
+
     memberName: 'Alex Morgan',
+
     queryScenario: 'normal',
   },
+
   {
     scenario: 'member-not-found',
+
     directoryName: 'replay-member-not-found',
+
     artifactVersion: '1.0.1',
+
     memberName: 'Unknown Member',
+
     queryScenario: 'normal',
   },
+
   {
     scenario: 'recovery',
+
     directoryName: 'replay-recovery',
+
     artifactVersion: '1.0.1',
+
     memberName: 'Alex Morgan',
+
     queryScenario: 'dialog',
   },
+
   {
     scenario: 'failure',
+
     directoryName: 'replay-failure',
+
     artifactVersion: '1.0.1',
+
     memberName: 'Alex Morgan',
+
     queryScenario: 'app-error',
   },
 ];
@@ -70,7 +93,9 @@ const DEFINITIONS: readonly ScenarioDefinition[] = [
 function createPolicy(origin: string): PolicyEngine {
   return new PolicyEngine({
     policyId: 'replay-evidence-freeze-policy',
+
     version: 1,
+
     defaultDecision: 'DENY',
 
     allowedOrigins: [origin],
@@ -78,17 +103,24 @@ function createPolicy(origin: string): PolicyEngine {
     allowedRoutes: [
       {
         routeId: 'member-search',
+
         description: 'Member search',
+
         match: {
           kind: 'exact',
+
           pathname: '/member-search',
         },
       },
+
       {
         routeId: 'member-details',
+
         description: 'Member details',
+
         match: {
           kind: 'prefix',
+
           pathname: '/member/',
         },
       },
@@ -99,20 +131,29 @@ function createPolicy(origin: string): PolicyEngine {
     riskRules: [
       {
         ruleId: 'read-only',
+
         description: 'Allow read-only replay operations',
+
         match: {
           actions: ['navigate', 'click', 'read'],
         },
+
         riskLevel: 'READ_ONLY',
+
         decision: 'ALLOW',
       },
+
       {
         ruleId: 'reversible',
+
         description: 'Allow reversible replay input',
+
         match: {
           actions: ['type'],
         },
+
         riskLevel: 'REVERSIBLE',
+
         decision: 'ALLOW',
       },
     ],
@@ -129,6 +170,7 @@ async function removeEmptyRuntimeDirectories(directory: string): Promise<void> {
       if (entries.length === 0) {
         await rm(path, {
           recursive: true,
+
           force: true,
         });
       }
@@ -154,6 +196,7 @@ async function filesRecursively(directory: string): Promise<string[]> {
 
     if (entry.isDirectory()) {
       files.push(...(await filesRecursively(path)));
+
       continue;
     }
 
@@ -173,7 +216,7 @@ async function writeChecksums(directory: string): Promise<void> {
 
     const digest = createHash('sha256').update(bytes).digest('hex');
 
-    const name = relative(directory, file).replaceAll('\\', '/');
+    const name = relative(directory, file).replaceAll('\\\\', '/');
 
     lines.push(`${digest}  ${name}`);
   }
@@ -183,6 +226,7 @@ async function writeChecksums(directory: string): Promise<void> {
 
 async function writeScenarioReadme(
   definition: ScenarioDefinition,
+
   directory: string,
 ): Promise<void> {
   const descriptions: Record<FrozenScenario, string> = {
@@ -211,35 +255,62 @@ async function writeScenarioReadme(
 
   const markdown = `# Frozen Replay Evidence
 
+
+
 This directory is reviewer-safe evidence from a real Playwright replay against the local synthetic banking demo.
+
+
 
 ## Scenario
 
+
+
 ${descriptions[definition.scenario]}
+
+
 
 ## Capability
 
+
+
 - ID: \`lookup_savings_balance\`
+
 - Version: \`${definition.artifactVersion}\`
+
 - Replay mode: deterministic
+
 - LLM decisions during replay: none
+
+
 
 ## Expected terminal result
 
+
+
 ${expected[definition.scenario]}
+
+
 
 ## Files
 
+
+
 - \`run.json\` — sanitized run metadata
+
 - \`events.jsonl\` — sanitized structured event log
+
 - \`result.json\` — sanitized terminal result
+
 ${
   definition.scenario === 'failure'
     ? '- `screenshots/` — synthetic-fixture failure screenshot\n'
     : ''
 }- \`SHA256SUMS.txt\` — integrity hashes for this evidence package
 
+
+
 Temporary traces and unrelated runtime artifacts are intentionally excluded.
+
 `;
 
   await writeFile(join(directory, 'README.md'), markdown, 'utf8');
@@ -249,12 +320,18 @@ async function runScenario(origin: string, definition: ScenarioDefinition): Prom
   const directory = join(EVIDENCE_ROOT, definition.directoryName);
 
   /*
+
    * Frozen evidence must represent one clean run.
+
    * Remove only the named reviewer directory.
+
    * UUID runtime folders are deliberately untouched.
+
    */
+
   await rm(directory, {
     recursive: true,
+
     force: true,
   });
 
@@ -274,6 +351,7 @@ async function runScenario(origin: string, definition: ScenarioDefinition): Prom
     createSurface: ({ access, surfaceId }) =>
       new PlaywrightSurface(access.page, {
         sessionId: access.sessionId,
+
         surfaceId,
       }),
   });
@@ -285,9 +363,13 @@ async function runScenario(origin: string, definition: ScenarioDefinition): Prom
   try {
     const context = await coordinator.start({
       runId,
+
       mode: 'REPLAY',
+
       evidenceRoot: EVIDENCE_ROOT,
+
       headed: process.env.HEADED === '1',
+
       timeoutMs: 10_000,
     });
 
@@ -295,15 +377,24 @@ async function runScenario(origin: string, definition: ScenarioDefinition): Prom
 
     process.stdout.write(`  entry: ${entryUrl}\n`);
 
+    /*
+     * Bootstrap navigation is also an automated browser
+     * operation, so verify REPLAY ownership immediately
+     * before it starts.
+     */
+    context.sessionManager.access('REPLAY');
+
     const navigation = await context.surface.perform(
       {
         actionId: 'replay-entry-navigation',
 
         action: {
           kind: 'navigate',
+
           destination: entryUrl,
         },
       },
+
       {
         timeoutMs: 5_000,
       },
@@ -317,10 +408,12 @@ async function runScenario(origin: string, definition: ScenarioDefinition): Prom
       recordEvent: (event) =>
         context.evidenceRecorder.recordEvent({
           step: event.step,
+
           eventType: event.eventType,
 
           result: {
             stepId: event.stepId ?? null,
+
             details: event.details,
           },
 
@@ -334,32 +427,49 @@ async function runScenario(origin: string, definition: ScenarioDefinition): Prom
 
         return context.evidenceRecorder.captureScreenshot({
           step: metadata.step,
+
           bytes: captured.bytes,
+
           capturedAt: captured.capturedAt,
+
           dataHandling: 'SYNTHETIC_FIXTURE_ONLY',
         });
       },
     };
 
     /*
+
      * Every frozen scenario uses the same real replay evidence path.
+
      * Scenario-specific manual lifecycle logging is intentionally avoided.
+
      */
+
     const stepExecutor = new ReplayBrowserStepExecutor({
       surface: context.surface,
+
       policyEngine: context.policyEngine,
+
       operationTimeoutMs: 5_000,
+
+      assertAutomationOwnership: () => {
+        context.sessionManager.access('REPLAY');
+      },
+
       evidenceSink: replayEvidenceSink,
     });
 
     const engine = new ReplayEngine({
       artifactStore,
+
       stepExecutor,
+
       evidenceSink: replayEvidenceSink,
     });
 
     const result = await engine.runOrderedSteps({
       capabilityId: 'lookup_savings_balance',
+
       version: definition.artifactVersion,
 
       inputs: {
@@ -377,12 +487,15 @@ async function runScenario(origin: string, definition: ScenarioDefinition): Prom
 
     switch (definition.scenario) {
       case 'success':
+      // falls through: success and recovery share identical terminal validation.
       case 'recovery': {
         if (result.status !== 'success') {
           throw new Error(
             `${definition.scenario} freeze expected success, received:\n${JSON.stringify(
               result,
+
               null,
+
               2,
             )}`,
           );
@@ -401,12 +514,15 @@ async function runScenario(origin: string, definition: ScenarioDefinition): Prom
 
           result: {
             status: result.status,
+
             stepsExecuted: result.stepsExecuted,
+
             outputs: result.outputs,
           },
         });
 
         finalized = true;
+
         break;
       }
 
@@ -422,8 +538,11 @@ async function runScenario(origin: string, definition: ScenarioDefinition): Prom
 
           result: {
             status: result.status,
+
             code: result.outcome.code,
+
             stepId: result.stepId,
+
             stepsExecuted: result.stepsExecuted,
 
             ...(result.outcome.details === undefined
@@ -435,6 +554,7 @@ async function runScenario(origin: string, definition: ScenarioDefinition): Prom
         });
 
         finalized = true;
+
         break;
       }
 
@@ -445,13 +565,18 @@ async function runScenario(origin: string, definition: ScenarioDefinition): Prom
 
         await coordinator.fail({
           status: result.status,
+
           code: result.error.code,
+
           message: result.error.message,
+
           stepId: result.stepId,
+
           stepsExecuted: result.stepsExecuted,
         });
 
         finalized = true;
+
         break;
       }
     }
@@ -464,10 +589,13 @@ async function runScenario(origin: string, definition: ScenarioDefinition): Prom
   } finally {
     if (!finalized && coordinator.state === 'ACTIVE') {
       await coordinator
+
         .fail({
           code: 'ACTION_FAILED',
+
           phase: 'evidence_freeze_cleanup',
         })
+
         .catch(() => undefined);
     }
   }

@@ -318,3 +318,7 @@ export type {
 export { continueReplayAfterManualStep } from './replay-resume-continuation.js';
 
 export type { ReplayContinuationInput } from './replay-resume-continuation.js';
+
+export { performReplayOwnedAction } from './replay-owned-action.js';
+
+export type { ReplayOwnedActionInput, ReplayOwnedActionResult } from './replay-owned-action.js';

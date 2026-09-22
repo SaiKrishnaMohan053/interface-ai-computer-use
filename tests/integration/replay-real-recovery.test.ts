@@ -186,6 +186,8 @@ describe('real recoverable replay', () => {
         },
       );
 
+      context.sessionManager.access('REPLAY');
+
       expect(navigation.status).toBe('success');
 
       const stepExecutor = new ReplayBrowserStepExecutor({
@@ -194,6 +196,10 @@ describe('real recoverable replay', () => {
         policyEngine: context.policyEngine,
 
         operationTimeoutMs: 5_000,
+
+        assertAutomationOwnership: () => {
+          context.sessionManager.access('REPLAY');
+        },
 
         recordRecoveryAttempt: (event) => {
           recoveryEvents.push({

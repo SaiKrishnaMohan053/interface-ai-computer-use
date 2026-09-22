@@ -206,6 +206,8 @@ describe('real hard-failure replay', () => {
         },
       };
 
+      context.sessionManager.access('REPLAY');
+
       const navigation = await context.surface.perform(
         {
           actionId: 'replay-entry-navigation',
@@ -230,6 +232,10 @@ describe('real hard-failure replay', () => {
         policyEngine: context.policyEngine,
 
         operationTimeoutMs: 5_000,
+
+        assertAutomationOwnership: () => {
+          context.sessionManager.access('REPLAY');
+        },
 
         evidenceSink: replayEvidenceSink,
       });
