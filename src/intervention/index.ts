@@ -126,3 +126,10 @@ export type {
   FinalizeHumanAbortInput,
   HumanAbortCoordinator,
 } from './intervention-abort-finalizer.js';
+
+export { expireInterventionIfTimedOut } from './intervention-expiry.js';
+
+export type {
+  InterventionExpiryCheckInput,
+  InterventionExpiryCheckResult,
+} from './intervention-expiry.js';
