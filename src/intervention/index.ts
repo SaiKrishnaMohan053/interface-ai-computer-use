@@ -70,4 +70,7 @@ export type {
 
 export { InterventionController } from './intervention-controller.js';
 
-export type { CreateAndPauseInterventionInput } from './intervention-controller.js';
+export type {
+  CreateAndPauseInterventionInput,
+  TransferInterventionToHumanInput,
+} from './intervention-controller.js';

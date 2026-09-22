@@ -36,6 +36,25 @@ class FakeSessionManager {
     this.pauseCalls += 1;
     this.state = 'PAUSED';
   }
+
+  transferOwnership(
+    from: 'DISCOVERY' | 'REPLAY' | 'HUMAN',
+    to: 'DISCOVERY' | 'REPLAY' | 'HUMAN',
+  ): void {
+    if (this.state !== 'PAUSED') {
+      throw new Error(`Expected PAUSED session, received ${this.state}`);
+    }
+
+    if (this.owner !== from) {
+      throw new Error(`Expected owner ${from}, received ${this.owner}`);
+    }
+
+    if (from === to) {
+      throw new Error('Ownership transfer requires a new owner');
+    }
+
+    this.owner = to;
+  }
 }
 
 function coordinatedContext(session: FakeSessionManager): CoordinatedRunContext<unknown> {
@@ -247,5 +266,51 @@ describe('InterventionController', () => {
      * belongs to the later ownership-transfer subphase.
      */
     expect(test.session.owner).toBe('DISCOVERY');
+  });
+
+  it('transfers paused discovery ownership to HUMAN', async () => {
+    const test = fixture('DISCOVERY');
+
+    await test.controller.createAndPause({
+      context: test.context,
+      id: 'intervention-human-1',
+      source: 'DISCOVERY',
+      reasonCode: 'AUTOMATION_STUCK',
+      reason: 'Human operator is required',
+      observedState: 'Current application state',
+      evidenceRefs: [],
+    });
+
+    const acquired = await test.controller.transferToHuman({
+      interventionId: 'intervention-human-1',
+      context: test.context,
+    });
+
+    expect(acquired.status).toBe('ACQUIRED');
+    expect(test.session.state).toBe('PAUSED');
+    expect(test.session.owner).toBe('HUMAN');
+  });
+
+  it('transfers paused replay ownership to HUMAN', async () => {
+    const test = fixture('REPLAY');
+
+    await test.controller.createAndPause({
+      context: test.context,
+      id: 'intervention-human-2',
+      source: 'REPLAY',
+      reasonCode: 'HUMAN_APPROVAL_REQUIRED',
+      reason: 'Final action requires human involvement',
+      observedState: 'Sub-account review screen',
+      evidenceRefs: [],
+    });
+
+    const acquired = await test.controller.transferToHuman({
+      interventionId: 'intervention-human-2',
+      context: test.context,
+    });
+
+    expect(acquired.status).toBe('ACQUIRED');
+    expect(test.session.state).toBe('PAUSED');
+    expect(test.session.owner).toBe('HUMAN');
   });
 });

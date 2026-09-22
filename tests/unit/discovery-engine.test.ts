@@ -425,6 +425,8 @@ class FakeSessionManager {
 
   closeCalls = 0;
 
+  readonly accessCalls: Array<'DISCOVERY' | 'REPLAY' | 'HUMAN'> = [];
+
   pause(requestedBy: 'DISCOVERY' | 'REPLAY' | 'HUMAN' | 'NONE'): void {
     if (this.state !== 'ACTIVE') {
       throw new Error(`Expected ACTIVE session, received ${this.state}`);
@@ -435,6 +437,49 @@ class FakeSessionManager {
     }
 
     this.state = 'PAUSED';
+  }
+
+  transferOwnership(
+    from: 'DISCOVERY' | 'REPLAY' | 'HUMAN',
+    to: 'DISCOVERY' | 'REPLAY' | 'HUMAN',
+  ): void {
+    if (this.state !== 'PAUSED') {
+      throw new Error(`Expected PAUSED session, received ${this.state}`);
+    }
+
+    if (this.owner !== from) {
+      throw new Error(`Expected owner ${from}, received ${this.owner}`);
+    }
+
+    if (from === to) {
+      throw new Error('Ownership transfer requires a new owner');
+    }
+
+    this.owner = to;
+  }
+
+  access(owner: 'DISCOVERY' | 'REPLAY' | 'HUMAN') {
+    this.accessCalls.push(owner);
+
+    if (this.owner !== owner) {
+      throw new Error(`Expected owner ${owner}, received ${this.owner}`);
+    }
+
+    if (owner === 'HUMAN') {
+      if (this.state !== 'PAUSED') {
+        throw new Error('Human access requires PAUSED session');
+      }
+    } else if (this.state !== 'ACTIVE') {
+      throw new Error('Automation access requires ACTIVE session');
+    }
+
+    return {
+      sessionId: this.sessionId,
+      owner,
+      browser: {},
+      context: {},
+      page: {},
+    };
   }
 
   close(): Promise<void> {
@@ -1872,5 +1917,54 @@ describe('DiscoveryEngine', () => {
     expect(fixture.surface.performed).toHaveLength(0);
 
     expect(fixture.coordinator.finishedStatuses).toEqual(['failure']);
+  });
+
+  it('blocks discovery automation after ownership transfers to HUMAN', async () => {
+    const fixture = engine(
+      [
+        {
+          kind: 'click',
+          target: irreversibleTarget,
+          reason: 'Create the reviewed sub-account',
+        },
+      ],
+      {
+        policyEngine: policy(
+          {
+            click: 'REQUIRE_HUMAN',
+          },
+          {
+            click: 'IRREVERSIBLE',
+          },
+        ),
+      },
+    );
+
+    const result = await fixture.discovery.run(request());
+
+    expect(result.status).toBe('intervention_required');
+
+    if (result.status !== 'intervention_required') {
+      throw new Error('Expected intervention_required result');
+    }
+
+    expect(fixture.coordinator.sessionManager.state).toBe('PAUSED');
+    expect(fixture.coordinator.sessionManager.owner).toBe('DISCOVERY');
+
+    fixture.coordinator.sessionManager.transferOwnership('DISCOVERY', 'HUMAN');
+
+    expect(fixture.coordinator.sessionManager.owner).toBe('HUMAN');
+
+    expect(() => fixture.coordinator.sessionManager.access('DISCOVERY')).toThrow(
+      'Expected owner DISCOVERY, received HUMAN',
+    );
+
+    expect(() => fixture.coordinator.sessionManager.access('REPLAY')).toThrow(
+      'Expected owner REPLAY, received HUMAN',
+    );
+
+    expect(() => fixture.coordinator.sessionManager.access('HUMAN')).not.toThrow();
+
+    expect(fixture.surface.performed).toHaveLength(0);
   });
 });

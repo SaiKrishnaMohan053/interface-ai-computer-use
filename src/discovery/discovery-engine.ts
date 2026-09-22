@@ -223,46 +223,55 @@ function mapSurfaceFailure(error: SurfaceFailure): RuntimeFailureInput {
   switch (error.code) {
     case 'TARGET_NOT_FOUND': {
       code = 'TARGET_NOT_FOUND';
+
       break;
     }
 
     case 'TARGET_AMBIGUOUS': {
       code = 'TARGET_AMBIGUOUS';
+
       break;
     }
 
     case 'NAVIGATION_FAILED': {
       code = 'NAVIGATION_FAILED';
+
       break;
     }
 
     case 'ACTION_FAILED': {
       code = 'ACTION_FAILED';
+
       break;
     }
 
     case 'CONDITION_TIMEOUT': {
       code = 'RUN_TIMEOUT';
+
       break;
     }
 
     case 'CONDITION_EVALUATION_FAILED': {
       code = 'CHECKPOINT_FAILED';
+
       break;
     }
 
     case 'SURFACE_UNAVAILABLE': {
       code = 'APPLICATION_ERROR';
+
       break;
     }
 
     case 'STALE_TARGET': {
       code = 'ACTION_FAILED';
+
       break;
     }
 
     case 'UNSUPPORTED_OPERATION': {
       code = 'ACTION_FAILED';
+
       break;
     }
   }
@@ -312,6 +321,19 @@ function isAtEntry(observation: SurfaceObservation, entryUrl: string): boolean {
   } catch {
     return false;
   }
+}
+
+function assertDiscoveryActionOwnership(context: DiscoveryContext): void {
+  if (context.mode !== 'DISCOVERY') {
+    throw new Error(`Discovery action requires DISCOVERY mode; received ${context.mode}`);
+  }
+
+  /*
+   * SessionManager.access() is the hard authorization boundary.
+   * It rejects paused sessions and any non-DISCOVERY owner,
+   * including HUMAN ownership.
+   */
+  context.sessionManager.access('DISCOVERY');
 }
 
 export class DiscoveryEngine {
@@ -1156,6 +1178,8 @@ export class DiscoveryEngine {
       actionKind: 'navigate',
     });
 
+    assertDiscoveryActionOwnership(context);
+
     const result = await context.surface.perform(
       {
         actionId,
@@ -1499,6 +1523,8 @@ export class DiscoveryEngine {
 
       actionKind: decision.kind,
     });
+
+    assertDiscoveryActionOwnership(context);
 
     const result = await context.surface.perform(
       {

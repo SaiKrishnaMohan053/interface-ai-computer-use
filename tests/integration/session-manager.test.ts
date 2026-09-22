@@ -25,7 +25,6 @@ describe('SessionManager', () => {
       throw new Error('Expected operation to fail');
     } catch (error) {
       expect(error).toBeInstanceOf(SessionManagerError);
-
       expect(error).toMatchObject({ code });
     }
   }
@@ -51,7 +50,6 @@ describe('SessionManager', () => {
 
     expect(manager.state).toBe('ACTIVE');
     expect(manager.owner).toBe('DISCOVERY');
-
     expect(manager.access('DISCOVERY').page.isClosed()).toBe(false);
 
     expectSessionError(() => manager.acquireOwnership('REPLAY'), 'OWNERSHIP_CONFLICT');
@@ -59,11 +57,9 @@ describe('SessionManager', () => {
     expectSessionError(() => manager.releaseOwnership('REPLAY'), 'OWNERSHIP_MISMATCH');
 
     manager.releaseOwnership('DISCOVERY');
-
     expect(manager.owner).toBe('NONE');
 
     manager.acquireOwnership('REPLAY');
-
     expect(manager.owner).toBe('REPLAY');
   });
 
@@ -132,7 +128,6 @@ describe('SessionManager', () => {
     expectSessionError(() => manager.transferOwnership('DISCOVERY', 'HUMAN'), 'INVALID_STATE');
 
     manager.pause('DISCOVERY');
-
     manager.transferOwnership('DISCOVERY', 'HUMAN');
 
     expect(manager.snapshot()).toMatchObject({
@@ -152,8 +147,46 @@ describe('SessionManager', () => {
 
     expect(manager.state).toBe('ACTIVE');
     expect(manager.owner).toBe('REPLAY');
-
     expect(manager.access('REPLAY').page).toBe(originalPage);
+  });
+
+  it('keeps the same live page paused while transferring control to HUMAN', async () => {
+    const manager = await create();
+
+    manager.activate();
+    manager.acquireOwnership('DISCOVERY');
+
+    const automationAccess = manager.access('DISCOVERY');
+    const originalContext = automationAccess.context;
+    const originalPage = automationAccess.page;
+    const originalUrl = originalPage.url();
+
+    manager.pause('DISCOVERY');
+
+    expect(manager.snapshot()).toMatchObject({
+      state: 'PAUSED',
+      owner: 'DISCOVERY',
+    });
+
+    expect(originalPage.isClosed()).toBe(false);
+    expect(originalPage.url()).toBe(originalUrl);
+
+    manager.transferOwnership('DISCOVERY', 'HUMAN');
+
+    expect(manager.snapshot()).toMatchObject({
+      state: 'PAUSED',
+      owner: 'HUMAN',
+    });
+
+    const humanAccess = manager.access('HUMAN');
+
+    expect(humanAccess.context).toBe(originalContext);
+    expect(humanAccess.page).toBe(originalPage);
+    expect(humanAccess.page.url()).toBe(originalUrl);
+
+    expectSessionError(() => manager.access('DISCOVERY'), 'OWNERSHIP_MISMATCH');
+
+    expectSessionError(() => manager.access('REPLAY'), 'OWNERSHIP_MISMATCH');
   });
 
   it('can release and reacquire ownership while paused', async () => {
@@ -169,7 +202,6 @@ describe('SessionManager', () => {
     manager.acquireOwnership('HUMAN');
 
     expect(manager.owner).toBe('HUMAN');
-
     expect(manager.access('HUMAN').context).toBeDefined();
   });
 
