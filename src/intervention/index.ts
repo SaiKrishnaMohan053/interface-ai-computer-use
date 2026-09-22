@@ -133,3 +133,15 @@ export type {
   InterventionExpiryCheckInput,
   InterventionExpiryCheckResult,
 } from './intervention-expiry.js';
+
+export {
+  INTERVENTION_EVIDENCE_CHECKPOINTS,
+  InterventionEvidenceContinuity,
+} from './intervention-evidence.js';
+
+export type {
+  CaptureInterventionCheckpointInput,
+  InterventionEvidenceCheckpoint,
+  InterventionEvidenceContinuityOptions,
+  InterventionScreenshotDataHandling,
+} from './intervention-evidence.js';

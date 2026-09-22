@@ -1,4 +1,5 @@
 import type { CoordinatedRunContext } from '../runtime/index.js';
+
 import type { ActiveSessionOwner, SessionOwner } from '../session/index.js';
 
 import type {
@@ -10,6 +11,8 @@ import type {
 import type { LiveInterventionRegistry } from './live-intervention-registry.js';
 
 import type { InterventionRequest } from './intervention-types.js';
+
+import type { InterventionEvidenceContinuity } from './intervention-evidence.js';
 
 export interface CreateAndPauseInterventionInput extends Omit<
   CreateInterventionInput,
@@ -35,10 +38,20 @@ export class InterventionController {
     private readonly manager: InterventionManager,
 
     private readonly liveRegistry?: LiveInterventionRegistry,
+
+    private readonly evidenceContinuity?: InterventionEvidenceContinuity,
   ) {}
 
   async createAndPause(input: CreateAndPauseInterventionInput): Promise<InterventionRequest> {
     const owner = this.requireAutomationOwner(input.context.sessionManager.owner);
+
+    const beforeInterventionEvidence = await this.captureHandoffEvidence({
+      context: input.context,
+      interventionId: input.id,
+      checkpoint: 'BEFORE_INTERVENTION',
+      ...(input.stepId === undefined ? {} : { stepId: input.stepId }),
+      source: input.source,
+    });
 
     const intervention = await this.manager.create({
       id: input.id,
@@ -77,7 +90,10 @@ export class InterventionController {
 
       observedState: input.observedState,
 
-      evidenceRefs: input.evidenceRefs ?? [],
+      evidenceRefs: [
+        ...(input.evidenceRefs ?? []),
+        ...(beforeInterventionEvidence === null ? [] : [beforeInterventionEvidence]),
+      ],
 
       ...(input.createdAt === undefined
         ? {}
@@ -170,14 +186,24 @@ export class InterventionController {
     };
 
     /*
-     * Acquire persistent intervention ownership first.
-     *
-     * This gives us the exclusive lifecycle claim before
+     * Persist the exclusive human lifecycle claim before
      * handing the live BrowserContext/Page to HUMAN.
      */
     await this.manager.acquire(acquisitionInput);
 
     session.transferOwnership(expectedOwner, 'HUMAN');
+
+    const humanControlEvidence = await this.captureHandoffEvidence({
+      context: input.context,
+      interventionId: input.interventionId,
+      checkpoint: 'HUMAN_CONTROL',
+      ...(stored.request.stepId === undefined ? {} : { stepId: stored.request.stepId }),
+      source: stored.request.source,
+    });
+
+    if (humanControlEvidence !== null) {
+      await this.manager.addEvidenceReferences(input.interventionId, [humanControlEvidence]);
+    }
 
     return (await this.manager.get(input.interventionId)).request;
   }
@@ -205,6 +231,26 @@ export class InterventionController {
       );
     }
 
+    const liveContext =
+      this.liveRegistry?.has(input.interventionId) === true
+        ? this.liveRegistry.get(input.interventionId)
+        : undefined;
+
+    const humanResolutionEvidence =
+      liveContext === undefined
+        ? null
+        : await this.captureHandoffEvidence({
+            context: liveContext,
+            interventionId: input.interventionId,
+            checkpoint: 'HUMAN_RESOLUTION',
+            ...(stored.request.stepId === undefined ? {} : { stepId: stored.request.stepId }),
+            source: stored.request.source,
+          });
+
+    if (humanResolutionEvidence !== null) {
+      await this.manager.addEvidenceReferences(input.interventionId, [humanResolutionEvidence]);
+    }
+
     await this.manager.recordAuditEvent({
       interventionId: input.interventionId,
 
@@ -220,7 +266,10 @@ export class InterventionController {
             operatorId: input.operatorId,
           }),
 
-      evidenceRefs: input.evidenceRefs ?? [],
+      evidenceRefs: [
+        ...(input.evidenceRefs ?? []),
+        ...(humanResolutionEvidence === null ? [] : [JSON.stringify(humanResolutionEvidence)]),
+      ],
     });
   }
 
@@ -275,6 +324,18 @@ export class InterventionController {
 
     session.resume(automationOwner);
 
+    const resumedEvidence = await this.captureHandoffEvidence({
+      context: input.context,
+      interventionId: input.interventionId,
+      checkpoint: 'AUTOMATION_RESUMED',
+      ...(stored.request.stepId === undefined ? {} : { stepId: stored.request.stepId }),
+      source: stored.request.source,
+    });
+
+    if (resumedEvidence !== null) {
+      await this.manager.addEvidenceReferences(input.interventionId, [resumedEvidence]);
+    }
+
     await this.manager.recordAuditEvent({
       interventionId: input.interventionId,
 
@@ -283,6 +344,8 @@ export class InterventionController {
       actor: 'AUTOMATION',
 
       summary: `${automationOwner} control restored on the same live session.`,
+
+      evidenceRefs: resumedEvidence === null ? [] : [JSON.stringify(resumedEvidence)],
     });
 
     const resolved = await this.manager.transition(input.interventionId, 'RESOLVED');
@@ -346,6 +409,7 @@ export class InterventionController {
 
   private assertHumanOwnedLiveIntervention(
     request: InterventionRequest,
+
     context: CoordinatedRunContext<unknown>,
   ): void {
     if (request.sessionId !== context.sessionManager.sessionId) {
@@ -371,6 +435,21 @@ export class InterventionController {
         `Human handoff completion requires HUMAN ownership; received ${session.owner}`,
       );
     }
+  }
+
+  private async captureHandoffEvidence(input: {
+    readonly context: CoordinatedRunContext<unknown>;
+    readonly interventionId: string;
+    readonly checkpoint:
+      'BEFORE_INTERVENTION' | 'HUMAN_CONTROL' | 'HUMAN_RESOLUTION' | 'AUTOMATION_RESUMED';
+    readonly stepId?: string;
+    readonly source: InterventionRequest['source'];
+  }): Promise<InterventionRequest['evidenceRefs'][number] | null> {
+    if (this.evidenceContinuity === undefined) {
+      return null;
+    }
+
+    return this.evidenceContinuity.captureCheckpoint(input);
   }
 
   private sourceAutomationOwner(source: InterventionRequest['source']): ActiveSessionOwner {
