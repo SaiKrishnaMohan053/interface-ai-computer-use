@@ -441,6 +441,7 @@ class FakeSessionManager {
 
   transferOwnership(
     from: 'DISCOVERY' | 'REPLAY' | 'HUMAN',
+
     to: 'DISCOVERY' | 'REPLAY' | 'HUMAN',
   ): void {
     if (this.state !== 'PAUSED') {
@@ -475,16 +476,22 @@ class FakeSessionManager {
 
     return {
       sessionId: this.sessionId,
+
       owner,
+
       browser: {},
+
       context: {},
+
       page: {},
     };
   }
 
   close(): Promise<void> {
     this.closeCalls += 1;
+
     this.state = 'CLOSED';
+
     this.owner = 'NONE';
 
     return Promise.resolve();
@@ -504,6 +511,7 @@ class FakeCoordinator implements DiscoveryCoordinator {
 
   constructor(
     private readonly surface: SurfaceAdapter<TargetStrategy>,
+
     private readonly policyEngine: PolicyEngine,
   ) {}
 
@@ -512,21 +520,30 @@ class FakeCoordinator implements DiscoveryCoordinator {
 
     const eventLogReference = {
       evidenceId: 'event-log-1',
+
       runId: options.runId,
+
       kind: 'event_log' as const,
+
       relativePath: `${options.runId}/events.jsonl`,
+
       mediaType: 'application/x-ndjson',
+
       capturedAt: NOW,
     };
 
     const evidenceRecorder = {
       runId: options.runId,
+
       mode: 'DISCOVERY' as const,
+
       startedAt: NOW,
+
       eventLogReference,
 
       recordEvent: (event: RecordEventInput) => {
         this.events.push(event);
+
         return Promise.resolve();
       },
 
@@ -535,10 +552,15 @@ class FakeCoordinator implements DiscoveryCoordinator {
 
         return Promise.resolve({
           evidenceId: `screenshot-${this.screenshots.length}`,
+
           runId: options.runId,
+
           kind: 'screenshot' as const,
+
           relativePath: `${options.runId}/screenshots/screenshot-0001.png`,
+
           mediaType: 'image/png',
+
           capturedAt: input.capturedAt ?? NOW,
         });
       },
@@ -546,10 +568,15 @@ class FakeCoordinator implements DiscoveryCoordinator {
 
     return Promise.resolve({
       runId: options.runId,
+
       mode: 'DISCOVERY',
+
       sessionManager: this.sessionManager as unknown as SessionManager,
+
       evidenceRecorder,
+
       policyEngine: this.policyEngine,
+
       surface: this.surface,
     });
   }
@@ -562,6 +589,7 @@ class FakeCoordinator implements DiscoveryCoordinator {
 
   fail(result: unknown): Promise<RunEvidenceSummary> {
     void result;
+
     this.finishedStatuses.push('failure');
 
     return Promise.resolve(this.summary('failure'));
@@ -570,11 +598,17 @@ class FakeCoordinator implements DiscoveryCoordinator {
   private summary(status: RunEvidenceSummary['status']): RunEvidenceSummary {
     return {
       runId: this.startOptions?.runId ?? 'run-1',
+
       mode: 'DISCOVERY',
+
       status,
+
       startedAt: NOW,
+
       finishedAt: NOW,
+
       durationMs: 0,
+
       evidenceRefs: [],
     };
   }
@@ -664,41 +698,61 @@ function request() {
 
 function engine(
   decisions: unknown[],
+
   options: {
     readonly surface?: FakeSurface;
+
     readonly policyEngine?: PolicyEngine;
+
     readonly maxRepeatedStates?: number;
+
+    readonly interventionController?: InterventionController;
+
     readonly now?: () => Date;
   } = {},
 ) {
   const surface = options.surface ?? new FakeSurface();
+
   const model = new FakeModel(decisions);
+
   const coordinator = new FakeCoordinator(surface, options.policyEngine ?? policy());
 
   const interventionStore = new InMemoryInterventionStore();
+
   const interventionManager = new InterventionManager({
     store: interventionStore,
+
     now: () => NOW,
   });
-  const interventionController = new InterventionController(interventionManager);
+
+  const interventionController =
+    options.interventionController ?? new InterventionController(interventionManager);
 
   let id = 0;
 
   return {
     surface,
+
     model,
+
     coordinator,
+
     interventionManager,
 
     discovery: new DiscoveryEngine(
       {
         coordinator,
+
         model,
+
         interventionController,
       },
+
       {
         createId: () => `generated-${++id}`,
+
         now: options.now ?? (() => new Date(NOW)),
+
         ...(options.maxRepeatedStates === undefined
           ? {}
           : { maxRepeatedStates: options.maxRepeatedStates }),
@@ -757,13 +811,23 @@ describe('DiscoveryEngine', () => {
       {
         /*
 
+
+
          * FakeSurface deliberately returns the
+
+
 
          * same observation. Raise this threshold
 
+
+
          * because this test verifies orchestration,
 
+
+
          * not stuck detection.
+
+
 
          */
 
@@ -835,15 +899,19 @@ describe('DiscoveryEngine', () => {
       [
         {
           kind: 'click',
+
           target: irreversibleTarget,
+
           reason: 'Create the reviewed sub-account',
         },
       ],
+
       {
         policyEngine: policy(
           {
             click: 'REQUIRE_HUMAN',
           },
+
           {
             click: 'IRREVERSIBLE',
           },
@@ -855,13 +923,19 @@ describe('DiscoveryEngine', () => {
 
     expect(result).toMatchObject({
       status: 'intervention_required',
+
       intervention: {
         code: 'HUMAN_APPROVAL_REQUIRED',
+
         requestedOwner: 'HUMAN',
+
         resumable: true,
+
         context: {
           source: 'policy',
+
           actionKind: 'click',
+
           riskLevel: 'IRREVERSIBLE',
         },
       },
@@ -870,13 +944,19 @@ describe('DiscoveryEngine', () => {
     expect(fixture.surface.performed).toHaveLength(0);
 
     /*
+
      * Intervention is non-terminal. Discovery must not call
+
      * RunCoordinator.finish(), because finish closes the live session.
+
      */
+
     expect(fixture.coordinator.finishedStatuses).toEqual([]);
 
     expect(fixture.coordinator.sessionManager.state).toBe('PAUSED');
+
     expect(fixture.coordinator.sessionManager.owner).toBe('DISCOVERY');
+
     expect(fixture.coordinator.sessionManager.closeCalls).toBe(0);
 
     if (result.status !== 'intervention_required') {
@@ -887,9 +967,13 @@ describe('DiscoveryEngine', () => {
 
     expect(stored.request).toMatchObject({
       id: result.intervention.interventionId,
+
       sessionId: 'session-1',
+
       source: 'DISCOVERY',
+
       reasonCode: 'HUMAN_APPROVAL_REQUIRED',
+
       status: 'WAITING_FOR_HUMAN',
     });
 
@@ -1088,6 +1172,66 @@ describe('DiscoveryEngine', () => {
     expect(observationEvents).toHaveLength(2);
 
     expect(observationEvents[0]?.evidenceRefs).toMatchObject([{ kind: 'screenshot' }]);
+  });
+
+  it('persists a stuck-state intervention when deterministic repeated-state detection fires', async () => {
+    const store = new InMemoryInterventionStore();
+
+    const manager = new InterventionManager({
+      store,
+
+      now: () => NOW,
+    });
+
+    const interventionController = new InterventionController(manager);
+
+    const fixture = engine(
+      [
+        {
+          kind: 'complete',
+
+          summary: 'Claimed completion without reading',
+
+          outputs: {
+            savingsBalance: '$12,840.50',
+          },
+        },
+      ],
+
+      {
+        maxRepeatedStates: 2,
+
+        interventionController,
+      },
+    );
+
+    await expect(fixture.discovery.run(request())).resolves.toMatchObject({
+      status: 'intervention_required',
+
+      intervention: {
+        code: 'AUTOMATION_STUCK',
+
+        context: {
+          source: 'repeated_state',
+        },
+      },
+    });
+
+    const interventions = await manager.list();
+
+    expect(interventions).toHaveLength(1);
+
+    expect(interventions[0]?.request).toMatchObject({
+      source: 'DISCOVERY',
+
+      reasonCode: 'AUTOMATION_STUCK',
+
+      status: 'WAITING_FOR_HUMAN',
+    });
+
+    expect(interventions[0]?.request.reason).toContain('repeated the same state');
+
+    expect(fixture.coordinator.sessionManager.state).toBe('PAUSED');
   });
 
   it('rejects unsupported completion and then escalates repeated state', async () => {
@@ -1924,15 +2068,19 @@ describe('DiscoveryEngine', () => {
       [
         {
           kind: 'click',
+
           target: irreversibleTarget,
+
           reason: 'Create the reviewed sub-account',
         },
       ],
+
       {
         policyEngine: policy(
           {
             click: 'REQUIRE_HUMAN',
           },
+
           {
             click: 'IRREVERSIBLE',
           },
@@ -1949,6 +2097,7 @@ describe('DiscoveryEngine', () => {
     }
 
     expect(fixture.coordinator.sessionManager.state).toBe('PAUSED');
+
     expect(fixture.coordinator.sessionManager.owner).toBe('DISCOVERY');
 
     fixture.coordinator.sessionManager.transferOwnership('DISCOVERY', 'HUMAN');
