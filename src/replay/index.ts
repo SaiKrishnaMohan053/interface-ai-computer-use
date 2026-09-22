@@ -306,3 +306,15 @@ export type {
   ReplayKnownInterstitialInput,
   ReplayKnownInterstitialResult,
 } from './replay-known-interstitial.js';
+
+export { resolveReplayResume } from './replay-resume.js';
+
+export type {
+  ReplayResumeInput,
+  ReplayResumePostconditionResult,
+  ReplayResumeResult,
+} from './replay-resume.js';
+
+export { continueReplayAfterManualStep } from './replay-resume-continuation.js';
+
+export type { ReplayContinuationInput } from './replay-resume-continuation.js';
