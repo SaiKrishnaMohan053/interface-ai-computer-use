@@ -77,6 +77,7 @@ describe('operator control contracts', () => {
       goal: 'Read savings balance',
       observedState: 'Member details page',
       evidenceRefs: [],
+      auditTrail: [],
     });
 
     expect('sessionId' in view).toBe(false);

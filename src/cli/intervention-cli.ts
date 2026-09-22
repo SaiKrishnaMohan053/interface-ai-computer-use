@@ -32,6 +32,20 @@ interface OperatorInterventionView {
 
     operatorId?: string;
   };
+
+  auditTrail?: Array<{
+    eventId: string;
+
+    type: string;
+
+    actor: string;
+
+    occurredAt: string;
+
+    summary: string;
+
+    operatorId?: string;
+  }>;
 }
 
 type Command =
@@ -54,6 +68,29 @@ type Command =
       kind: 'start';
 
       interventionId: string;
+    }
+  | {
+      kind: 'manual-action';
+
+      interventionId: string;
+
+      summary: string;
+
+      operatorId?: string;
+    }
+  | {
+      kind: 'resume';
+
+      interventionId: string;
+
+      operatorId?: string;
+    }
+  | {
+      kind: 'abort';
+
+      interventionId: string;
+
+      operatorId?: string;
     };
 
 function config(): CliConfig {
@@ -65,7 +102,7 @@ function config(): CliConfig {
 }
 
 function parseArgs(argv: readonly string[]): Command {
-  const [kind, interventionId] = argv;
+  const [kind, interventionId, ...remaining] = argv;
 
   if (kind === 'list') {
     return {
@@ -73,7 +110,13 @@ function parseArgs(argv: readonly string[]): Command {
     };
   }
 
-  if (kind === 'show' || kind === 'acquire' || kind === 'start') {
+  if (
+    kind === 'show' ||
+    kind === 'acquire' ||
+    kind === 'start' ||
+    kind === 'resume' ||
+    kind === 'abort'
+  ) {
     if (interventionId === undefined || interventionId.trim().length === 0) {
       throw new Error(`${kind} requires an intervention id`);
     }
@@ -94,9 +137,50 @@ function parseArgs(argv: readonly string[]): Command {
 
     const operatorId = process.env.INTERVENTION_OPERATOR_ID;
 
+    if (kind === 'resume' || kind === 'abort') {
+      return {
+        kind,
+        interventionId,
+
+        ...(operatorId === undefined || operatorId.trim().length === 0
+          ? {}
+          : {
+              operatorId: operatorId.trim(),
+            }),
+      };
+    }
+
     return {
       kind: 'acquire',
       interventionId,
+
+      ...(operatorId === undefined || operatorId.trim().length === 0
+        ? {}
+        : {
+            operatorId: operatorId.trim(),
+          }),
+    };
+  }
+
+  if (kind === 'manual-action') {
+    if (interventionId === undefined || interventionId.trim().length === 0) {
+      throw new Error('manual-action requires an intervention id');
+    }
+
+    const summary = remaining.join(' ').trim();
+
+    if (summary.length === 0) {
+      throw new Error('manual-action requires a semantic action summary');
+    }
+
+    const operatorId = process.env.INTERVENTION_OPERATOR_ID;
+
+    return {
+      kind: 'manual-action',
+
+      interventionId,
+
+      summary,
 
       ...(operatorId === undefined || operatorId.trim().length === 0
         ? {}
@@ -115,6 +199,9 @@ function parseArgs(argv: readonly string[]): Command {
       '  intervention show <id>',
       '  intervention acquire <id>',
       '  intervention start <id>',
+      '  intervention manual-action <id> <summary>',
+      '  intervention resume <id>',
+      '  intervention abort <id>',
     ].join('\n'),
   );
 }
@@ -146,7 +233,7 @@ async function requestJson(url: string, init?: RequestInit): Promise<unknown> {
     let message = `HTTP ${response.status}`;
 
     if (typeof body === 'object' && body !== null && 'message' in body) {
-      const candidate = (body as Record<string, unknown>).message;
+      const candidate = body.message;
 
       if (typeof candidate === 'string') {
         message = candidate;
@@ -221,6 +308,14 @@ function printIntervention(intervention: OperatorInterventionView): void {
     }
   }
 
+  if (intervention.auditTrail !== undefined && intervention.auditTrail.length > 0) {
+    lines.push('', 'Audit trail:');
+
+    for (const event of intervention.auditTrail) {
+      lines.push(`- ${event.occurredAt} ${event.type} [${event.actor}] ${event.summary}`);
+    }
+  }
+
   process.stdout.write(`${lines.join('\n')}\n`);
 }
 
@@ -288,6 +383,78 @@ async function run(command: Command, cliConfig: CliConfig): Promise<void> {
     process.stdout.write('Session owner: HUMAN\n');
 
     process.stdout.write('The existing headed browser remains available for manual interaction.\n');
+
+    return;
+  }
+
+  if (command.kind === 'resume' || command.kind === 'abort') {
+    const body = assertInterventionView(
+      await requestJson(
+        `${cliConfig.baseUrl}/interventions/${encodeURIComponent(
+          command.interventionId,
+        )}/${command.kind}`,
+        {
+          method: 'POST',
+
+          headers: {
+            'content-type': 'application/json',
+          },
+
+          body: JSON.stringify({
+            ...(command.operatorId === undefined
+              ? {}
+              : {
+                  operatorId: command.operatorId,
+                }),
+          }),
+        },
+      ),
+    );
+
+    if (command.kind === 'resume') {
+      process.stdout.write(`Resumed automation for ${body.id}\n`);
+
+      process.stdout.write(`Status: ${body.status}\n`);
+
+      process.stdout.write(`Automation owner restored from source: ${body.source}\n`);
+
+      return;
+    }
+
+    process.stdout.write(`Aborted intervention ${body.id}\n`);
+
+    process.stdout.write(`Status: ${body.status}\n`);
+
+    return;
+  }
+
+  if (command.kind === 'manual-action') {
+    const body = assertInterventionView(
+      await requestJson(
+        `${cliConfig.baseUrl}/interventions/${encodeURIComponent(
+          command.interventionId,
+        )}/manual-action`,
+        {
+          method: 'POST',
+
+          headers: {
+            'content-type': 'application/json',
+          },
+
+          body: JSON.stringify({
+            summary: command.summary,
+
+            ...(command.operatorId === undefined
+              ? {}
+              : {
+                  operatorId: command.operatorId,
+                }),
+          }),
+        },
+      ),
+    );
+
+    process.stdout.write(`Recorded human action for ${body.id}\n`);
 
     return;
   }

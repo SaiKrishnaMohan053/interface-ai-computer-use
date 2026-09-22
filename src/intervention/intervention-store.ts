@@ -13,6 +13,10 @@ import {
   interventionResolutionSchema,
 } from './intervention-types.js';
 
+import { interventionAuditEventSchema } from './intervention-audit.js';
+
+import type { InterventionAuditEvent } from './intervention-audit.js';
+
 import type {
   HumanActionRecord,
   InterventionAcquisition,
@@ -28,6 +32,8 @@ export interface StoredIntervention {
   resolution?: InterventionResolution | undefined;
 
   humanActions: HumanActionRecord[];
+
+  auditTrail: InterventionAuditEvent[];
 }
 
 export const storedInterventionSchema = z
@@ -39,6 +45,13 @@ export const storedInterventionSchema = z
     resolution: interventionResolutionSchema.optional(),
 
     humanActions: z.array(humanActionRecordSchema),
+
+    /*
+     * Default keeps older persisted interventions readable.
+     * New records created by InterventionManager always write
+     * a real auditTrail starting with intervention.created.
+     */
+    auditTrail: z.array(interventionAuditEventSchema).default([]),
   })
   .strict();
 

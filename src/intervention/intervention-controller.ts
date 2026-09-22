@@ -139,6 +139,22 @@ export class InterventionController {
       );
     }
 
+    await this.manager.recordAuditEvent({
+      interventionId: input.interventionId,
+
+      type: 'human.acquire_requested',
+
+      actor: 'HUMAN',
+
+      summary: 'Human operator requested control of the paused live session.',
+
+      ...(input.operatorId === undefined
+        ? {}
+        : {
+            operatorId: input.operatorId,
+          }),
+    });
+
     const acquisitionInput: AcquireInterventionInput = {
       interventionId: input.interventionId,
 
@@ -170,6 +186,195 @@ export class InterventionController {
     const stored = await this.manager.markInProgress(interventionId);
 
     return stored.request;
+  }
+
+  async recordManualAction(input: {
+    interventionId: string;
+
+    summary: string;
+
+    operatorId?: string;
+
+    evidenceRefs?: string[];
+  }): Promise<void> {
+    const stored = await this.manager.get(input.interventionId);
+
+    if (stored.request.status !== 'ACQUIRED' && stored.request.status !== 'IN_PROGRESS') {
+      throw new Error(
+        `Manual human action requires ACQUIRED or IN_PROGRESS intervention status; received ${stored.request.status}`,
+      );
+    }
+
+    await this.manager.recordAuditEvent({
+      interventionId: input.interventionId,
+
+      type: 'human.action_performed',
+
+      actor: 'HUMAN',
+
+      summary: input.summary,
+
+      ...(input.operatorId === undefined
+        ? {}
+        : {
+            operatorId: input.operatorId,
+          }),
+
+      evidenceRefs: input.evidenceRefs ?? [],
+    });
+  }
+
+  async resumeAutomation(input: {
+    interventionId: string;
+
+    context: CoordinatedRunContext<unknown>;
+
+    operatorId?: string;
+  }): Promise<InterventionRequest> {
+    const stored = await this.manager.get(input.interventionId);
+
+    this.assertHumanOwnedLiveIntervention(stored.request, input.context);
+
+    await this.manager.recordAuditEvent({
+      interventionId: input.interventionId,
+
+      type: 'human.resume_requested',
+
+      actor: 'HUMAN',
+
+      summary: 'Human operator requested automation resume.',
+
+      ...(input.operatorId === undefined
+        ? {}
+        : {
+            operatorId: input.operatorId,
+          }),
+    });
+
+    const automationOwner = this.sourceAutomationOwner(stored.request.source);
+
+    const session = input.context.sessionManager;
+
+    session.transferOwnership('HUMAN', automationOwner);
+
+    await this.manager.recordAuditEvent({
+      interventionId: input.interventionId,
+
+      type: 'human.control_released',
+
+      actor: 'HUMAN',
+
+      summary: `Human operator released control back to ${automationOwner}.`,
+
+      ...(input.operatorId === undefined
+        ? {}
+        : {
+            operatorId: input.operatorId,
+          }),
+    });
+
+    session.resume(automationOwner);
+
+    await this.manager.recordAuditEvent({
+      interventionId: input.interventionId,
+
+      type: 'automation.control_restored',
+
+      actor: 'AUTOMATION',
+
+      summary: `${automationOwner} control restored on the same live session.`,
+    });
+
+    const resolved = await this.manager.transition(input.interventionId, 'RESOLVED');
+
+    this.liveRegistry?.remove(input.interventionId);
+
+    return resolved;
+  }
+
+  async abortHumanIntervention(input: {
+    interventionId: string;
+
+    context: CoordinatedRunContext<unknown>;
+
+    operatorId?: string;
+  }): Promise<InterventionRequest> {
+    const stored = await this.manager.get(input.interventionId);
+
+    this.assertHumanOwnedLiveIntervention(stored.request, input.context);
+
+    await this.manager.recordAuditEvent({
+      interventionId: input.interventionId,
+
+      type: 'human.abort_requested',
+
+      actor: 'HUMAN',
+
+      summary: 'Human operator requested that automation stop.',
+
+      ...(input.operatorId === undefined
+        ? {}
+        : {
+            operatorId: input.operatorId,
+          }),
+    });
+
+    const session = input.context.sessionManager;
+
+    session.releaseOwnership('HUMAN');
+
+    await this.manager.recordAuditEvent({
+      interventionId: input.interventionId,
+
+      type: 'human.control_released',
+
+      actor: 'HUMAN',
+
+      summary: 'Human operator released the live session without restoring automation.',
+
+      ...(input.operatorId === undefined
+        ? {}
+        : {
+            operatorId: input.operatorId,
+          }),
+    });
+
+    const aborted = await this.manager.transition(input.interventionId, 'ABORTED');
+
+    this.liveRegistry?.remove(input.interventionId);
+
+    await session.close();
+
+    return aborted;
+  }
+
+  private assertHumanOwnedLiveIntervention(
+    request: InterventionRequest,
+    context: CoordinatedRunContext<unknown>,
+  ): void {
+    if (request.sessionId !== context.sessionManager.sessionId) {
+      throw new Error(`Intervention ${request.id} is bound to another session`);
+    }
+
+    if (request.status !== 'ACQUIRED' && request.status !== 'IN_PROGRESS') {
+      throw new Error(
+        `Human handoff completion requires ACQUIRED or IN_PROGRESS intervention status; received ${request.status}`,
+      );
+    }
+
+    const session = context.sessionManager;
+
+    if (session.state !== 'PAUSED') {
+      throw new Error(
+        `Human handoff completion requires PAUSED session state; received ${session.state}`,
+      );
+    }
+
+    if (session.owner !== 'HUMAN') {
+      throw new Error(
+        `Human handoff completion requires HUMAN ownership; received ${session.owner}`,
+      );
+    }
   }
 
   private sourceAutomationOwner(source: InterventionRequest['source']): ActiveSessionOwner {

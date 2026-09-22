@@ -43,6 +43,10 @@ interface AcquireBody {
   operatorId?: string;
 }
 
+interface OperatorIdentityBody {
+  operatorId?: string;
+}
+
 export class OperatorControlServer {
   private server: Server | undefined;
 
@@ -157,6 +161,8 @@ export class OperatorControlServer {
                 : {
                     acquisition: record.acquisition,
                   }),
+
+              auditTrail: record.auditTrail,
             }),
           ),
         );
@@ -188,6 +194,8 @@ export class OperatorControlServer {
               : {
                   acquisition: record.acquisition,
                 }),
+
+            auditTrail: record.auditTrail,
           }),
         );
 
@@ -226,6 +234,8 @@ export class OperatorControlServer {
               : {
                   acquisition: record.acquisition,
                 }),
+
+            auditTrail: record.auditTrail,
           }),
         );
 
@@ -256,6 +266,128 @@ export class OperatorControlServer {
               : {
                   acquisition: record.acquisition,
                 }),
+
+            auditTrail: record.auditTrail,
+          }),
+        );
+
+        return;
+      }
+
+      if (method === 'POST' && route.action === 'manual-action') {
+        const body = await this.readManualActionBody(request);
+
+        const context = this.dependencies.liveRegistry.get(route.interventionId);
+
+        if (context.sessionManager.state !== 'PAUSED' || context.sessionManager.owner !== 'HUMAN') {
+          throw new Error(
+            `Manual human action requires PAUSED/HUMAN session ownership; received ${context.sessionManager.state}/${context.sessionManager.owner}`,
+          );
+        }
+
+        await this.dependencies.controller.recordManualAction({
+          interventionId: route.interventionId,
+
+          summary: body.summary,
+
+          ...(body.operatorId === undefined
+            ? {}
+            : {
+                operatorId: body.operatorId,
+              }),
+        });
+
+        const record = await this.dependencies.manager.get(route.interventionId);
+
+        this.sendJson(
+          response,
+          200,
+          toOperatorInterventionView({
+            request: record.request,
+
+            ...(record.acquisition === undefined
+              ? {}
+              : {
+                  acquisition: record.acquisition,
+                }),
+
+            auditTrail: record.auditTrail,
+          }),
+        );
+
+        return;
+      }
+
+      if (method === 'POST' && route.action === 'resume') {
+        const body = await this.readOperatorIdentityBody(request);
+
+        const context = this.dependencies.liveRegistry.get(route.interventionId);
+
+        await this.dependencies.controller.resumeAutomation({
+          interventionId: route.interventionId,
+
+          context,
+
+          ...(body.operatorId === undefined
+            ? {}
+            : {
+                operatorId: body.operatorId,
+              }),
+        });
+
+        const record = await this.dependencies.manager.get(route.interventionId);
+
+        this.sendJson(
+          response,
+          200,
+          toOperatorInterventionView({
+            request: record.request,
+
+            ...(record.acquisition === undefined
+              ? {}
+              : {
+                  acquisition: record.acquisition,
+                }),
+
+            auditTrail: record.auditTrail,
+          }),
+        );
+
+        return;
+      }
+
+      if (method === 'POST' && route.action === 'abort') {
+        const body = await this.readOperatorIdentityBody(request);
+
+        const context = this.dependencies.liveRegistry.get(route.interventionId);
+
+        await this.dependencies.controller.abortHumanIntervention({
+          interventionId: route.interventionId,
+
+          context,
+
+          ...(body.operatorId === undefined
+            ? {}
+            : {
+                operatorId: body.operatorId,
+              }),
+        });
+
+        const record = await this.dependencies.manager.get(route.interventionId);
+
+        this.sendJson(
+          response,
+          200,
+          toOperatorInterventionView({
+            request: record.request,
+
+            ...(record.acquisition === undefined
+              ? {}
+              : {
+                  acquisition: record.acquisition,
+                }),
+
+            auditTrail: record.auditTrail,
           }),
         );
 
@@ -273,7 +405,7 @@ export class OperatorControlServer {
   private parseInterventionRoute(pathname: string): {
     interventionId: string;
 
-    action: 'acquire' | 'start' | null;
+    action: 'acquire' | 'start' | 'manual-action' | 'resume' | 'abort' | null;
   } | null {
     const parts = pathname.split('/').filter((part) => part.length > 0);
 
@@ -296,7 +428,13 @@ export class OperatorControlServer {
 
     const action = parts[2];
 
-    if (action !== 'acquire' && action !== 'start') {
+    if (
+      action !== 'acquire' &&
+      action !== 'start' &&
+      action !== 'manual-action' &&
+      action !== 'resume' &&
+      action !== 'abort'
+    ) {
       return null;
     }
 
@@ -374,6 +512,114 @@ export class OperatorControlServer {
     };
   }
 
+  private async readOperatorIdentityBody(request: IncomingMessage): Promise<OperatorIdentityBody> {
+    const chunks: Uint8Array[] = [];
+
+    let totalBytes = 0;
+
+    for await (const chunk of request) {
+      const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+
+      totalBytes += buffer.length;
+
+      if (totalBytes > MAX_REQUEST_BODY_BYTES) {
+        throw new Error('Operator request body is too large');
+      }
+
+      chunks.push(buffer);
+    }
+
+    if (chunks.length === 0) {
+      return {};
+    }
+
+    const text = Buffer.concat(chunks).toString('utf8');
+
+    if (text.trim().length === 0) {
+      return {};
+    }
+
+    const parsed: unknown = JSON.parse(text);
+
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+      throw new Error('Operator request body must be a JSON object');
+    }
+
+    const body = parsed as Record<string, unknown>;
+
+    if (
+      body.operatorId !== undefined &&
+      (typeof body.operatorId !== 'string' || body.operatorId.trim().length === 0)
+    ) {
+      throw new Error('operatorId must be a non-empty string');
+    }
+
+    return {
+      ...(typeof body.operatorId === 'string'
+        ? {
+            operatorId: body.operatorId.trim(),
+          }
+        : {}),
+    };
+  }
+
+  private async readManualActionBody(request: IncomingMessage): Promise<{
+    summary: string;
+
+    operatorId?: string;
+  }> {
+    const chunks: Uint8Array[] = [];
+
+    let totalBytes = 0;
+
+    for await (const chunk of request) {
+      const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+
+      totalBytes += buffer.length;
+
+      if (totalBytes > MAX_REQUEST_BODY_BYTES) {
+        throw new Error('Operator request body is too large');
+      }
+
+      chunks.push(buffer);
+    }
+
+    const text = Buffer.concat(chunks).toString('utf8');
+
+    if (text.trim().length === 0) {
+      throw new Error('Manual action request body is required');
+    }
+
+    const parsed: unknown = JSON.parse(text);
+
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+      throw new Error('Manual action request body must be a JSON object');
+    }
+
+    const body = parsed as Record<string, unknown>;
+
+    if (typeof body.summary !== 'string' || body.summary.trim().length === 0) {
+      throw new Error('summary must be a non-empty string');
+    }
+
+    if (
+      body.operatorId !== undefined &&
+      (typeof body.operatorId !== 'string' || body.operatorId.trim().length === 0)
+    ) {
+      throw new Error('operatorId must be a non-empty string');
+    }
+
+    return {
+      summary: body.summary.trim(),
+
+      ...(typeof body.operatorId === 'string'
+        ? {
+            operatorId: body.operatorId.trim(),
+          }
+        : {}),
+    };
+  }
+
   private handleError(response: ServerResponse, error: unknown): void {
     if (error instanceof InterventionNotFoundError) {
       this.sendJson(response, 404, {
@@ -393,11 +639,14 @@ export class OperatorControlServer {
           message.includes('must be WAITING_FOR_HUMAN') ||
           message.includes('requires PAUSED') ||
           message.includes('Expected') ||
-          message.includes('must be ACQUIRED')
+          message.includes('must be ACQUIRED') ||
+          message.includes('requires HUMAN ownership') ||
+          message.includes('handoff completion requires')
         ? 409
         : message.includes('request body') ||
             message.includes('acquisitionId') ||
             message.includes('operatorId') ||
+            message.includes('summary') ||
             error instanceof SyntaxError
           ? 400
           : 500;

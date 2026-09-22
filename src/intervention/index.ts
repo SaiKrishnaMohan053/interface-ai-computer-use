@@ -103,3 +103,19 @@ export type {
   OperatorControlServerDependencies,
   OperatorControlServerOptions,
 } from './operator-control-server.js';
+
+export {
+  INTERVENTION_AUDIT_ACTORS,
+  INTERVENTION_AUDIT_EVENT_TYPES,
+  interventionAuditActorSchema,
+  interventionAuditEventSchema,
+  interventionAuditEventTypeSchema,
+  isHumanAuditEvent,
+  parseInterventionAuditEvent,
+} from './intervention-audit.js';
+
+export type {
+  InterventionAuditActor,
+  InterventionAuditEvent,
+  InterventionAuditEventType,
+} from './intervention-audit.js';

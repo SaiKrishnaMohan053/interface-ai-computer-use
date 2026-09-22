@@ -7,6 +7,8 @@ import {
   interventionStatusSchema,
 } from './intervention-types.js';
 
+import { interventionAuditEventSchema } from './intervention-audit.js';
+
 import type {
   InterventionAcquisition,
   InterventionRequest,
@@ -14,13 +16,25 @@ import type {
   InterventionStatus,
 } from './intervention-types.js';
 
-export const OPERATOR_COMMAND_KINDS = ['list', 'show', 'acquire', 'start'] as const;
+import type { InterventionAuditEvent } from './intervention-audit.js';
+
+export const OPERATOR_COMMAND_KINDS = [
+  'list',
+  'show',
+  'acquire',
+  'start',
+  'manual-action',
+  'resume',
+  'abort',
+] as const;
 
 export const operatorCommandKindSchema = z.enum(OPERATOR_COMMAND_KINDS);
 
 export type OperatorCommandKind = z.infer<typeof operatorCommandKindSchema>;
 
 const identifierSchema = z.string().trim().min(1).max(500);
+
+const summarySchema = z.string().trim().min(1).max(1000);
 
 export const operatorCommandSchema = z.discriminatedUnion('kind', [
   z
@@ -32,7 +46,6 @@ export const operatorCommandSchema = z.discriminatedUnion('kind', [
   z
     .object({
       kind: z.literal('show'),
-
       interventionId: identifierSchema,
     })
     .strict(),
@@ -40,11 +53,8 @@ export const operatorCommandSchema = z.discriminatedUnion('kind', [
   z
     .object({
       kind: z.literal('acquire'),
-
       interventionId: identifierSchema,
-
       acquisitionId: identifierSchema,
-
       operatorId: identifierSchema.optional(),
     })
     .strict(),
@@ -52,8 +62,32 @@ export const operatorCommandSchema = z.discriminatedUnion('kind', [
   z
     .object({
       kind: z.literal('start'),
-
       interventionId: identifierSchema,
+    })
+    .strict(),
+
+  z
+    .object({
+      kind: z.literal('manual-action'),
+      interventionId: identifierSchema,
+      summary: summarySchema,
+      operatorId: identifierSchema.optional(),
+    })
+    .strict(),
+
+  z
+    .object({
+      kind: z.literal('resume'),
+      interventionId: identifierSchema,
+      operatorId: identifierSchema.optional(),
+    })
+    .strict(),
+
+  z
+    .object({
+      kind: z.literal('abort'),
+      interventionId: identifierSchema,
+      operatorId: identifierSchema.optional(),
     })
     .strict(),
 ]);
@@ -85,6 +119,8 @@ export const operatorInterventionViewSchema = z
     evidenceRefs: interventionRequestSchema.shape.evidenceRefs,
 
     acquisition: interventionAcquisitionSchema.optional(),
+
+    auditTrail: z.array(interventionAuditEventSchema).default([]),
   })
   .strict();
 
@@ -112,6 +148,8 @@ export interface OperatorInterventionView {
   evidenceRefs: InterventionRequest['evidenceRefs'];
 
   acquisition?: InterventionAcquisition | undefined;
+
+  auditTrail: InterventionAuditEvent[];
 }
 
 export function parseOperatorCommand(value: unknown): OperatorCommand {
@@ -124,7 +162,10 @@ export function parseOperatorInterventionView(value: unknown): OperatorIntervent
 
 export function toOperatorInterventionView(input: {
   request: InterventionRequest;
+
   acquisition?: InterventionAcquisition | undefined;
+
+  auditTrail?: InterventionAuditEvent[] | undefined;
 }): OperatorInterventionView {
   return operatorInterventionViewSchema.parse({
     id: input.request.id,
@@ -170,5 +211,7 @@ export function toOperatorInterventionView(input: {
       : {
           acquisition: input.acquisition,
         }),
+
+    auditTrail: input.auditTrail ?? [],
   });
 }

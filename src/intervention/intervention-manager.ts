@@ -1,9 +1,19 @@
+import { randomUUID } from 'node:crypto';
+
 import {
   humanActionRecordSchema,
   interventionAcquisitionSchema,
   interventionRequestSchema,
   interventionResolutionSchema,
 } from './intervention-types.js';
+
+import { interventionAuditEventSchema } from './intervention-audit.js';
+
+import type {
+  InterventionAuditActor,
+  InterventionAuditEvent,
+  InterventionAuditEventType,
+} from './intervention-audit.js';
 
 import type {
   HumanActionRecord,
@@ -60,12 +70,30 @@ export interface InterventionManagerDependencies {
   store: InterventionStore;
 
   now?: () => string;
+
+  auditEventId?: () => string;
+}
+
+export interface RecordInterventionAuditEventInput {
+  interventionId: string;
+
+  type: InterventionAuditEventType;
+
+  actor: InterventionAuditActor;
+
+  summary: string;
+
+  operatorId?: string;
+
+  evidenceRefs?: string[];
 }
 
 export class InterventionManager {
   private readonly store: InterventionStore;
 
   private readonly now: () => string;
+
+  private readonly auditEventId: () => string;
 
   constructor(dependencies: InterventionManagerDependencies) {
     this.store = dependencies.store;
@@ -75,6 +103,8 @@ export class InterventionManager {
       (() => {
         return new Date().toISOString();
       });
+
+    this.auditEventId = dependencies.auditEventId ?? (() => randomUUID());
   }
 
   async create(input: CreateInterventionInput): Promise<InterventionRequest> {
@@ -122,9 +152,30 @@ export class InterventionManager {
       status: 'REQUESTED',
     });
 
+    const createdEvent = interventionAuditEventSchema.parse({
+      eventId: this.auditEventId(),
+
+      interventionId: request.id,
+
+      sessionId: request.sessionId,
+
+      type: 'intervention.created',
+
+      actor: 'AUTOMATION',
+
+      occurredAt: request.createdAt,
+
+      summary: 'Automation created an intervention and requested human involvement.',
+
+      source: request.source,
+
+      evidenceRefs: request.evidenceRefs.map((reference) => JSON.stringify(reference)),
+    });
+
     await this.store.create({
       request,
       humanActions: [],
+      auditTrail: [createdEvent],
     });
 
     return request;
@@ -243,6 +294,32 @@ export class InterventionManager {
       },
     });
 
+    const controlAcquiredAudit = interventionAuditEventSchema.parse({
+      eventId: this.auditEventId(),
+
+      interventionId: record.request.id,
+
+      sessionId: record.request.sessionId,
+
+      type: 'human.control_acquired',
+
+      actor: 'HUMAN',
+
+      occurredAt: acquiredAt,
+
+      summary: 'Human operator acquired control of the paused live session.',
+
+      source: record.request.source,
+
+      ...(input.operatorId === undefined
+        ? {}
+        : {
+            operatorId: input.operatorId,
+          }),
+
+      evidenceRefs: [],
+    });
+
     const updatedRecord: StoredIntervention = {
       ...record,
 
@@ -251,6 +328,8 @@ export class InterventionManager {
       acquisition,
 
       humanActions: [...record.humanActions, controlAcquiredAction],
+
+      auditTrail: [...record.auditTrail, controlAcquiredAudit],
     };
 
     await this.store.update(updatedRecord);
@@ -330,6 +409,57 @@ export class InterventionManager {
     });
 
     return updatedRequest;
+  }
+
+  async recordAuditEvent(
+    input: RecordInterventionAuditEventInput,
+  ): Promise<InterventionAuditEvent> {
+    const record = await this.get(input.interventionId);
+
+    if (isTerminalInterventionStatus(record.request.status)) {
+      throw new InterventionError(
+        'INTERVENTION_ALREADY_TERMINAL',
+        `Cannot record audit event for terminal intervention ${input.interventionId}`,
+        {
+          interventionId: input.interventionId,
+          status: record.request.status,
+        },
+      );
+    }
+
+    const event = interventionAuditEventSchema.parse({
+      eventId: this.auditEventId(),
+
+      interventionId: record.request.id,
+
+      sessionId: record.request.sessionId,
+
+      type: input.type,
+
+      actor: input.actor,
+
+      occurredAt: this.now(),
+
+      summary: input.summary,
+
+      source: record.request.source,
+
+      ...(input.operatorId === undefined
+        ? {}
+        : {
+            operatorId: input.operatorId,
+          }),
+
+      evidenceRefs: input.evidenceRefs ?? [],
+    });
+
+    await this.store.update({
+      ...record,
+
+      auditTrail: [...record.auditTrail, event],
+    });
+
+    return event;
   }
 
   async recordHumanAction(input: HumanActionRecord): Promise<HumanActionRecord> {

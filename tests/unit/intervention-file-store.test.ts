@@ -58,6 +58,8 @@ function createRecord(overrides: Partial<StoredIntervention> = {}): StoredInterv
 
     humanActions: [],
 
+    auditTrail: [],
+
     ...overrides,
   };
 }
