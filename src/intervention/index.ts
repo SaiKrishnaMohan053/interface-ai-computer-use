@@ -56,6 +56,14 @@ export type {
   InterventionManagerDependencies,
 } from './intervention-manager.js';
 
-export { InMemoryInterventionStore } from './intervention-store.js';
+export {
+  FileSystemInterventionStore,
+  InMemoryInterventionStore,
+  storedInterventionSchema,
+} from './intervention-store.js';
 
-export type { InterventionStore, StoredIntervention } from './intervention-store.js';
+export type {
+  FileSystemInterventionStoreOptions,
+  InterventionStore,
+  StoredIntervention,
+} from './intervention-store.js';
