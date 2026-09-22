@@ -33,3 +33,13 @@ export class InvalidInterventionTransitionError extends InterventionError {
     this.name = 'InvalidInterventionTransitionError';
   }
 }
+
+export class InterventionNotFoundError extends InterventionError {
+  constructor(interventionId: string) {
+    super('INTERVENTION_NOT_FOUND', `Intervention not found: ${interventionId}`, {
+      interventionId,
+    });
+
+    this.name = 'InterventionNotFoundError';
+  }
+}

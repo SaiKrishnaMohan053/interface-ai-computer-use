@@ -31,7 +31,11 @@ export type {
   InterventionStatus,
 } from './intervention-types.js';
 
-export { InvalidInterventionTransitionError, InterventionError } from './intervention-errors.js';
+export {
+  InvalidInterventionTransitionError,
+  InterventionError,
+  InterventionNotFoundError,
+} from './intervention-errors.js';
 
 export type { InterventionErrorCode } from './intervention-errors.js';
 
@@ -44,3 +48,14 @@ export {
 } from './intervention-state-machine.js';
 
 export type { TerminalInterventionStatus } from './intervention-state-machine.js';
+
+export { InterventionManager } from './intervention-manager.js';
+
+export type {
+  CreateInterventionInput,
+  InterventionManagerDependencies,
+} from './intervention-manager.js';
+
+export { InMemoryInterventionStore } from './intervention-store.js';
+
+export type { InterventionStore, StoredIntervention } from './intervention-store.js';
