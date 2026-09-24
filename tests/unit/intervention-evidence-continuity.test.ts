@@ -120,14 +120,14 @@ function fixture(options: { readonly failCapture?: boolean } = {}) {
 
       if (options.failCapture === true) {
         return Promise.resolve({
-  status: 'failure',
-  error: {
-    code: 'SURFACE_UNAVAILABLE',
-    message: 'Synthetic screenshot unavailable',
-    expected: 'screenshot evidence',
-    observed: 'capture failed',
-  },
-});
+          status: 'failure',
+          error: {
+            code: 'SURFACE_UNAVAILABLE',
+            message: 'Synthetic screenshot unavailable',
+            expected: 'screenshot evidence',
+            observed: 'capture failed',
+          },
+        });
       }
 
       return Promise.resolve({
