@@ -196,7 +196,7 @@ describe('operator resume and abort routes', () => {
     ]);
   });
 
-  it('aborts the intervention, closes the live session, and never restores automation', async () => {
+  it('aborts the intervention, releases HUMAN ownership, and never restores automation', async () => {
     const fixture = await createAcquiredFixture('DISCOVERY');
 
     server = new OperatorControlServer(
@@ -236,11 +236,11 @@ describe('operator resume and abort routes', () => {
 
     expect(body.status).toBe('ABORTED');
 
-    expect(fixture.session.state).toBe('CLOSED');
+    expect(fixture.session.state).toBe('PAUSED');
 
     expect(fixture.session.owner).toBe('NONE');
 
-    expect(fixture.session.closeCalls).toBe(1);
+    expect(fixture.session.closeCalls).toBe(0);
 
     expect(body.auditTrail.map((event) => event.type)).toEqual([
       'intervention.created',
