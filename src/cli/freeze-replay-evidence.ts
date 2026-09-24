@@ -15,6 +15,9 @@ import { PolicyEngine } from '../policy/index.js';
 import {
   ReplayBrowserStepExecutor,
   ReplayEngine,
+  ReplayOutputStore,
+  evaluateReplaySuccessCondition,
+  recordReplayEvidence,
   type ReplayEvidenceSink,
 } from '../replay/index.js';
 
@@ -281,6 +284,8 @@ ${descriptions[definition.scenario]}
 
 - LLM decisions during replay: none
 
+- Invocation input values are intentionally omitted from replay evidence; validated input names are recorded without persisting sensitive values.
+
 
 
 ## Expected terminal result
@@ -309,11 +314,9 @@ ${
 
 
 
-Temporary traces and unrelated runtime artifacts are intentionally excluded.
+Temporary traces and unrelated runtime artifacts are intentionally excluded.`;
 
-`;
-
-  await writeFile(join(directory, 'README.md'), markdown, 'utf8');
+  await writeFile(join(directory, 'README.md'), `${markdown}\n`, 'utf8');
 }
 
 async function runScenario(origin: string, definition: ScenarioDefinition): Promise<void> {
@@ -527,6 +530,49 @@ async function runScenario(origin: string, definition: ScenarioDefinition): Prom
             )}`,
           );
         }
+
+        const artifact = await artifactStore.load(
+          'lookup_savings_balance',
+          definition.artifactVersion,
+        );
+
+        const outputStore = new ReplayOutputStore(artifact);
+
+        const storedOutput = outputStore.store(
+          {
+            kind: 'outputRef',
+            name: 'savingsBalance',
+          },
+          result.outputs.savingsBalance,
+        );
+
+        if (storedOutput.status !== 'stored') {
+          throw new Error('Frozen replay could not store savingsBalance for success verification.');
+        }
+
+        const successCondition = await evaluateReplaySuccessCondition({
+          adapter: context.surface,
+          condition: artifact.successCondition,
+          outputStore,
+          wait: {
+            timeoutMs: 5_000,
+            pollIntervalMs: 100,
+          },
+        });
+
+        if (successCondition.status !== 'passed') {
+          throw new Error('Frozen replay final success condition did not pass.');
+        }
+
+        await recordReplayEvidence({
+          sink: replayEvidenceSink,
+          eventType: 'success_condition.passed',
+          step: result.stepsExecuted,
+          details: {
+            status: 'passed',
+          },
+          evidenceRefs: successCondition.evidenceRefs,
+        });
 
         await coordinator.finish({
           status: 'success',

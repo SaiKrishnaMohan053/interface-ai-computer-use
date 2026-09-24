@@ -2,9 +2,9 @@
   "runId": "replay-member-not-found",
   "mode": "REPLAY",
   "status": "business_outcome",
-  "startedAt": "2026-09-21T16:55:51.666Z",
-  "finishedAt": "2026-09-21T16:55:58.179Z",
-  "durationMs": 6513,
+  "startedAt": "2026-09-24T22:11:32.726Z",
+  "finishedAt": "2026-09-24T22:11:39.370Z",
+  "durationMs": 6644,
   "result": {
     "status": "business_outcome",
     "code": "MEMBER_NOT_FOUND",
@@ -17,12 +17,12 @@
   },
   "evidenceRefs": [
     {
-      "evidenceId": "98e2e215-2525-4676-95e3-d072b4328a82",
+      "evidenceId": "1724a5e9-132a-4142-bb95-a6d3ae404665",
       "runId": "replay-member-not-found",
       "kind": "event_log",
       "relativePath": "replay-member-not-found/events.jsonl",
       "mediaType": "application/x-ndjson",
-      "capturedAt": "2026-09-21T16:55:51.666Z"
+      "capturedAt": "2026-09-24T22:11:32.726Z"
     }
   ]
 }

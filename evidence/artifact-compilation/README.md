@@ -8,6 +8,10 @@ This package documents deterministic compilation of the genuine successful Phase
 - Source package: `evidence/discovery-success/`
 - Raw discovery trace is intentionally not duplicated here.
 
+The discovery trace and capability artifact are different contracts: the trace records one observed run, while the artifact contains only the reusable, parameterized workflow needed for deterministic replay.
+
+Artifact compilation is LLM-free. The compiler consumes the validated frozen discovery result/trace and explicit compile configuration; it does not call OpenAI or any other model.
+
 ## Result
 
 - Artifact: `artifacts/lookup_savings_balance/1.0.0.json`
