@@ -1,255 +1,77 @@
 # 1. Architecture
 
-The system is a TypeScript modular monolith using Node.js, Playwright, Zod, and Vitest.
+The system is a single-process TypeScript application built around explicit boundaries rather than distributed infrastructure. `DiscoveryEngine` performs bounded LLM-guided observation and decision-making against a live UI. Model output is converted into typed decisions; it does not directly control the browser. Before an automated action executes, the system validates the decision, classifies risk, evaluates `PolicyEngine`, resolves a semantic target, verifies session ownership, and then delegates the action to a `SurfaceAdapter`.
 
-The main boundaries are:
+`PlaywrightSurface` is the current concrete surface implementation. `SessionManager` owns the live `BrowserContext` and `Page` and enforces exclusive `DISCOVERY`, `REPLAY`, or `HUMAN` ownership. Successful discovery is compiled by `ArtifactCompiler` into a validated, versioned capability stored by `ArtifactStore`. `ReplayEngine` then executes that artifact deterministically without an LLM. Evidence components persist sanitized structured events plus selected richer evidence such as screenshots for failure and handoff cases.
 
-- `DiscoveryEngine` runs the bounded LLM-guided observe, decide, authorize, and act loop.
-- `DiscoveryDecisionModel` isolates LLM participation.
-- `ArtifactCompiler` converts a successful discovery run into a reusable capability.
-- `ArtifactStore` validates and persists immutable artifact versions.
-- `ReplayEngine` executes persisted artifact steps deterministically without an LLM.
-- `PolicyEngine` performs deterministic authorization during discovery and replay.
-- `TargetResolver` resolves ordered semantic targets.
-- `SurfaceAdapter` separates orchestration from concrete UI technology.
-- `PlaywrightSurface` implements browser interaction.
-- `SessionManager` owns the live browser session and exclusive actor ownership.
-- Intervention components pause automation, route human work, transfer ownership, resume or abort, and preserve evidence continuity.
-- Evidence components persist sanitized structured events and richer failure or handoff evidence.
-
-The core execution model is:
-
-```text
-probabilistic discovery
--> deterministic artifact compilation
--> reusable capability artifact
--> deterministic replay
--> human escalation when automation cannot safely continue
-```
-
-The LLM discovers a workflow. The persisted artifact becomes the production execution contract. Replay does not ask a model what to do next: it loads a validated artifact, binds invocation inputs, executes ordered steps, re-evaluates policy, verifies conditions, extracts declared outputs, and returns a structured result.
+The key trade-off is a modular monolith instead of queues, services, or a browser farm. For this take-home, the hard problem is the contract between discovery, policy, artifacts, replay, and human control transfer. Keeping those boundaries in one process makes correctness and reviewability easier while preserving seams that could later be separated operationally.
 
 # 2. Artifact schema
 
-The capability artifact is deliberately separate from the discovery trace.
+The artifact is a reusable capability contract, not a raw discovery transcript. A discovery trace records what happened in one probabilistic run; the artifact keeps only the information needed to invoke the capability again safely and deterministically.
 
-The discovery trace records what happened during one run. The artifact contains only reusable workflow information required for future deterministic execution.
+The schema contains stable identity and semantic versioning, application/surface compatibility metadata, typed inputs and outputs, ordered executable steps, semantic targets, preconditions and postconditions, bounded wait/recovery metadata, known business outcomes, a final success condition, risk metadata, and provenance.
 
-It includes:
+Invocation-specific values are parameterized. For example, the discovered member name becomes an `inputRef` (`memberName:string`) and the extracted balance becomes an `outputRef` (`savingsBalance:currency`) rather than persisting `Alex Morgan` or the discovered balance as reusable logic. Targets are semantic and may use role/name, labels, visible text, or structural relationships. The Savings lookup, for example, targets the Accounts table row where `Account Type = Savings` and reads the `Current Balance` column rather than storing row indexes or browser handles.
 
-- Stable capability identity and semantic version.
-- Application compatibility metadata.
-- Typed required and optional inputs.
-- Typed outputs.
-- Ordered executable steps.
-- Semantic target specifications.
-- Preconditions and postconditions.
-- Wait and recovery metadata.
-- Known business outcomes.
-- A final success condition.
-- Risk metadata.
-- Provenance.
-
-For the example capability:
-
-```text
-input:
-  memberName:string
-
-output:
-  savingsBalance:currency
-```
-
-Invocation-specific discovery values are parameterized. The reusable artifact stores an input reference rather than `Alex Morgan`, and an output binding rather than the discovered balance.
-
-Targets are normalized before persistence. Runtime browser handles and discovery-specific model prose are excluded. The Savings lookup uses structural targeting:
-
-```text
-Accounts table
--> row where Account Type = Savings
--> Current Balance column
-```
-
-This avoids depending on recorded row indexes, column indexes, or transient browser handles.
-
-Persisted capability versions are immutable. Compatible changes are published as new semantic versions rather than silently replacing an existing artifact.
+Artifacts are validated before persistence and stored as immutable semantic versions. Compatibility and provenance allow the runtime to decide whether a saved capability is appropriate for a given application/version while keeping the discovery evidence separate from the production execution contract.
 
 # 3. Determinism & error handling
 
-Artifact step order is authoritative during replay.
+Replay treats artifact step order as authoritative. There is no LLM in the replay decision loop. For each step, the runtime evaluates known runtime state and authorized recovery, verifies preconditions, observes the current surface, re-evaluates system risk and policy, checks automation ownership before target resolution, resolves the semantic target, checks ownership again immediately before execution, performs the declared action, extracts outputs when applicable, verifies postconditions, and finally verifies the artifact success condition.
 
-Replay does not use an LLM to choose, reorder, skip, or synthesize actions. Given an artifact and invocation inputs, execution follows the persisted step sequence:
+Determinism comes from typed actions, ordered semantic target strategies, unique-target requirements, bounded waits, explicit checkpoints, and final success verification. Target resolution fails safely if no unique target can be established; replay does not choose an arbitrary first match. Recovery is also bounded and artifact-authorized rather than improvised by a model.
 
-```text
-load artifact
--> validate invocation inputs
--> bind input references
--> evaluate policy
--> resolve semantic target
--> verify preconditions
--> perform action
--> extract declared output if applicable
--> verify postconditions
--> continue in artifact order
--> verify final success condition
--> return structured result
-```
+The result model separates four important non-success cases. A **\*\*business outcome\*\*** is an expected domain result, for example `MEMBER_NOT_FOUND`. A **\*\*recoverable runtime condition\*\*** is a known state with deterministic recovery, for example `KNOWN_INTERSTITIAL`, which can be dismissed only when the artifact authorizes that recovery and the recovery budget permits it. A **\*\*hard failure\*\***, for example `APPLICATION_ERROR`, stops replay and returns structured context including the failing step and available expected/observed evidence. **\*\*Intervention required\*\*** is returned when automation cannot safely proceed and human ownership is required.
 
-Targeting is semantic rather than based on replaying recorded browser handles. `TargetResolver` uses ordered target strategies and fails safely when no unique target can be established.
-
-Steps use explicit preconditions and postconditions. Waits are bounded. The final success condition is verified explicitly rather than assuming the last action succeeded.
-
-Replay distinguishes:
-
-```text
-success
-business outcome
-recoverable condition
-hard failure
-intervention required
-```
-
-A business outcome is an expected domain result, such as `MEMBER_NOT_FOUND`, rather than a system crash. Recoverable conditions are known states with explicit bounded recovery. Hard failures stop execution and return typed error context including the failing step and, where available, expected state, observed state, and screenshot evidence.
-
-Recovery is deliberately narrow:
-
-```text
-known condition
-+ artifact-authorized recovery
-+ bounded attempt budget
-= deterministic recovery
-```
-
-Replay does not improvise recovery with an LLM. Unknown conditions, exhausted recovery, ambiguous targets, policy blocks, unrecoverable session state, and application failures stop or escalate deliberately.
-
-Reviewer evidence includes real Playwright runs for normal success, `MEMBER_NOT_FOUND`, known-interstitial recovery, and an `APPLICATION_ERROR` hard failure.
+UI drift is detected indirectly through compatibility mismatch, target-resolution failure, pre/postcondition failure, final-success mismatch, or degrading replay stability. Those signals fail or escalate rather than silently changing the recorded flow.
 
 # 4. Heterogeneity & multi-tenant
 
-The workflow contract is separated from Playwright through `SurfaceAdapter`.
+`SurfaceAdapter` is the seam between capability semantics and concrete computer-use technology. The artifact describes actions, semantic targets, observations, and conditions without depending on Playwright runtime handles. `PlaywrightSurface` implements that contract today. The same artifact-level model could be supported by a legacy-web/accessibility adapter, a desktop accessibility adapter, or a screenshot/vision-and-coordinate adapter, each responsible for observing and resolving the same semantic intent on its own surface.
 
-Artifacts describe semantic intent rather than browser-specific runtime handles. Target strategies can represent accessible role/name relationships, labels, visible text, structural relationships, and explicit fallbacks.
+For multi-tenant reuse, the intended model is a base capability associated with a vendor/application family plus explicit version/variant compatibility. Tenants running the same underlying product should reuse the base artifact when compatible. Where a tenant or product version differs, a future specialization layer could provide versioned target/condition overrides rather than re-recording the entire capability.
 
-A legacy-web, desktop, accessibility-tree, or screenshot-based adapter could implement the same surface contract while resolving artifact-level target intent using technology appropriate to that surface.
-
-Application compatibility metadata is explicit so vendor versions and tenant-specific variants can be checked rather than silently assumed compatible.
-
-For multi-tenant deployment, the intended model is a shared base capability for a vendor/application family with controlled compatibility metadata and versioned specialization where tenant differences require it.
-
-Full cross-tenant specialization, automated drift management, and non-browser surface adapters are not implemented in this take-home.
+Drift signals would include application/version mismatch, semantic target resolution failures, checkpoint mismatches, and replay-stability degradation across runs. Those signals would trigger review, specialization, or re-discovery rather than silent per-tenant mutation. The current implementation does not claim a production multi-tenant runtime, cross-tenant override store, or non-browser adapter; it keeps the core contracts compatible with those extensions.
 
 # 5. Escalation & handoff
 
-Automation escalates when it cannot safely continue. Triggers include a risky or irreversible action that policy marks `REQUIRE_HUMAN`, an unknown or unsupported runtime condition, exhausted deterministic recovery, or a stuck state.
+Automation can escalate when policy marks an action `REQUIRE_HUMAN`, when a condition is unsafe or unsupported, when deterministic recovery is exhausted, or when execution is otherwise stuck. The intervention request records enough context to act: run/session identity, source actor, capability and step where applicable, reason code, observed state, and evidence references.
 
-The intervention request records the context needed for a human to act: run/session identity, source actor, capability and step when applicable, reason code and reason, observed state, and evidence references.
+The handoff is performed on the same live session. Automation first pauses; `SessionManager` then transfers exclusive ownership from `DISCOVERY` or `REPLAY` to `HUMAN`. The operator acts in the existing headed `BrowserContext` and `Page`; browser state is not recreated. Manual actions and control transitions are recorded in the intervention audit trail.
 
-The control-transfer sequence is:
+The operator may resume or abort. On resume, ownership returns to the source automation actor and the runtime takes a fresh observation rather than trusting the pre-handoff state. It verifies the paused step's postcondition and continues only from the state actually left by the human. This prevents replay from duplicating an irreversible action that the human already completed. On abort, automation is not resumed and the run is finalized with a structured terminal failure.
 
-```text
-DISCOVERY or REPLAY owns live session
--> automation reaches intervention_required
--> intervention request is persisted
--> session is paused
--> HUMAN explicitly acquires ownership
--> human uses the same live BrowserContext/Page
--> human performs manual work
--> human records the manual action
--> human chooses RESUME or ABORT
-```
-
-`SessionManager` enforces exclusive ownership. A live session has one owner at a time: `DISCOVERY`, `REPLAY`, `HUMAN`, or no owner when inactive. While `HUMAN` owns the paused session, automated browser actions are rejected immediately before surface execution.
-
-The human operates the same headed browser session that automation was using; a fresh browser session is not created. This preserves navigation state, cookies/session context inside the live browser, and the evidence timeline.
-
-On resume, ownership returns to the source automation actor. Replay does not trust the pre-handoff observation or blindly repeat the paused action. It takes a fresh observation, re-checks the paused-step postcondition, and continues only from the state actually left by the human. In the included risky-action demo, the human completes the synthetic final action and replay observes `Sub-account created` without issuing a duplicate irreversible click.
-
-On abort, automation is not resumed. The run terminates with a structured `ACTION_FAILED` result whose observed reason is `HUMAN_ABORTED`, and the live session is finalized.
-
-Evidence remains continuous across the handoff. The preserved reviewer package records checkpoints for:
-
-```text
-BEFORE_INTERVENTION
-HUMAN_CONTROL
-HUMAN_RESOLUTION
-AUTOMATION_RESUMED
-```
-
-The full co-browsing/operator-console product is intentionally out of scope; the implemented operator surface is a minimal CLI/control-server workflow over the real same-session ownership mechanism.
+Evidence continuity spans the same run, session, and intervention identifiers so the reviewer can follow automation pause, HUMAN acquisition, manual resolution, control return, fresh re-observation, and final verification as one live-session timeline.
 
 # 6. Safety
 
-Safety is enforced outside the LLM.
+Safety is enforced outside the LLM. `PolicyEngine` uses explicit allowlists for permitted origins, routes, action kinds, and risk rules, producing `ALLOW`, `DENY`, or `REQUIRE_HUMAN`. Risk classification is system-authoritative; a model decision or persisted artifact cannot lower the effective risk of an action. Replay re-evaluates policy at runtime instead of treating artifact creation as permanent authorization.
 
-Model output does not directly own browser execution. Discovery decisions are schema-validated, system risk-classified, policy-checked, target-resolved, and only then executed by the surface adapter.
+Ownership is another hard boundary: automated execution is rejected while `HUMAN` owns the paused session. After runtime policy allows an automated action, ownership is checked before semantic target resolution and checked again immediately before surface execution. Ambiguous semantic targets fail closed, waits and recovery are bounded, and irreversible actions can require human control rather than automatic execution.
 
-Artifacts also do not bypass policy. Every actionable replay step is re-authorized at runtime:
+Persistence is sanitized before write. Artifacts and reviewer evidence exclude credentials, API keys, cookies/authentication state, raw model responses, hidden reasoning, browser/runtime handles, and other non-reusable session state. Artifact validation/security checks reject unsupported or unsafe persisted content, and frozen evidence packages include integrity hashes.
 
-```text
-artifact step
--> system-authoritative risk classification
--> stored-risk enforcement
--> policy evaluation
--> semantic target resolution
--> ownership check
--> surface execution
-```
-
-Policy uses explicit allowlists for permitted origins, routes, action kinds, and risk rules. A stored artifact cannot downgrade system-authoritative risk or make a disallowed action permissible.
-
-Risky and irreversible actions are handled conservatively. The synthetic `Confirm Create Sub-Account` action is classified as `IRREVERSIBLE` and requires human intervention; automation does not execute it automatically.
-
-Exactly one actor controls a live session. Ownership is checked immediately before automated surface execution, so automation cannot begin a browser action while `HUMAN` owns the paused session.
-
-Replay is LLM-free. It follows the persisted artifact and deterministic recovery rules rather than asking a model for the next action or for open-ended recovery.
-
-Persistence is sanitized before write. Reusable artifacts and reviewer evidence exclude secrets, API keys, cookies/authentication state, raw model responses, hidden reasoning, browser/runtime handles, and other non-reusable session state. Structured reviewer evidence was audited for forbidden raw runtime-state terms, and evidence packages include integrity manifests.
-
-Other fail-closed behavior includes:
-
-- Ambiguous targets are not resolved by choosing the first match.
-- Invalid invocation inputs fail before normal browser execution.
-- Recovery is limited to known, authorized conditions.
-- Unknown or exhausted recovery can escalate.
-- Application failures stop replay instead of being treated as normal state.
-- Human resume requires a fresh observation of the live state.
-- Human abort prevents further automated execution.
-
-Limits: the policy model is configuration-driven rather than a production authorization service; the demo uses synthetic data; screenshots are permitted because the fixture is synthetic; and the implementation does not provide a production co-browsing UI or enterprise identity/approval workflow.
+The limits are intentional: this is not a production authorization service, identity system, or regulated-data platform. The demo uses synthetic financial data, the policy rules are local configuration, and the operator surface is minimal. A production deployment would need enterprise authentication/authorization, tenant-aware policy administration, audit retention controls, and stronger data-governance integration.
 
 # 7. Cuts
 
-The implemented vertical slice covers the required end-to-end path:
+I intentionally cut infrastructure and product surface area that was not necessary to prove the end-to-end control model:
 
-```text
-natural-language goal
--> genuine LLM-driven discovery
--> policy-controlled UI execution
--> successful discovery evidence
--> deterministic artifact compilation
--> typed parameterized capability
--> immutable versioned persistence
--> deterministic replay without an LLM
--> runtime input binding
--> semantic target resolution
--> replay policy enforcement
--> bounded conditions and recovery
--> business-outcome handling
--> hard-failure detection
--> human escalation
--> same-session HUMAN takeover
--> resume or abort
--> continuous reviewer evidence
-```
+- no real bank integration or real customer data;
 
-Deliberate cuts are:
+- no production operator/co-browsing console;
 
-- A full real-time human operator UI / co-browsing console.
-- Production operator identity, authentication, approval, and queueing workflows.
-- Desktop and accessibility-tree surface implementations.
-- Cross-tenant artifact specialization and automated drift management.
-- Distributed scheduling or browser-farm infrastructure.
-- Artifact approval workflows.
-- LLM-assisted replay fallback.
+- no production operator identity, approval, or permission system;
 
-These are left at explicit seams rather than represented as implemented functionality. The take-home focuses on the load-bearing requirements: genuine discovery, a reusable artifact contract, deterministic policy-controlled replay, explicit runtime outcomes, real same-session human handoff, safety enforcement, and reviewer-verifiable evidence.
+- no desktop or accessibility-tree surface implementation;
+
+- no production multi-tenant runtime or tenant-specific override service;
+
+- no distributed scheduler or browser farm;
+
+- no artifact approval/governance workflow;
+
+- no open-ended LLM recovery during replay.
+
+These cuts prioritize a thin but real vertical slice: genuine LLM discovery against a live UI, a reusable typed capability artifact, deterministic policy-controlled replay with explicit outcomes and recovery, real same-session human takeover, safety enforcement, and reviewer-verifiable evidence. With more time, I would build tenant/version override management and drift telemetry first, then a production operator console and additional surface adapters, before introducing distributed execution infrastructure.
