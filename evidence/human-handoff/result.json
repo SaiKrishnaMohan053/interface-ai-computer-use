@@ -1,0 +1,59 @@
+{
+  "runId": "hitl-demo-e118c9af-a6e5-4898-b5b8-ab25a5b6647a",
+  "mode": "REPLAY",
+  "status": "success",
+  "startedAt": "2026-09-24T03:04:46.467Z",
+  "finishedAt": "2026-09-24T03:08:59.854Z",
+  "durationMs": 253387,
+  "result": {
+    "capabilityId": "prepare_new_savings_subaccount",
+    "capabilityVersion": "1.0.0",
+    "interventionId": "hitl-7a06d4e7-11c5-43ae-b65b-e9c9ea87534c",
+    "sessionId": "35fdd9ca-c7c2-46ae-a863-fa266ac7c815",
+    "manualStepResolved": true,
+    "duplicateRiskyActionExecuted": false,
+    "terminalState": "Sub-account created"
+  },
+  "evidenceRefs": [
+    {
+      "evidenceId": "d2dcef6f-0f2f-4220-b21d-ace50895f2fb",
+      "runId": "hitl-demo-e118c9af-a6e5-4898-b5b8-ab25a5b6647a",
+      "kind": "event_log",
+      "relativePath": "hitl-demo-e118c9af-a6e5-4898-b5b8-ab25a5b6647a/events.jsonl",
+      "mediaType": "application/x-ndjson",
+      "capturedAt": "2026-09-24T03:04:46.467Z"
+    },
+    {
+      "evidenceId": "d8ac51da-bed5-4d74-9e98-981a54cf5d76",
+      "runId": "hitl-demo-e118c9af-a6e5-4898-b5b8-ab25a5b6647a",
+      "kind": "screenshot",
+      "relativePath": "hitl-demo-e118c9af-a6e5-4898-b5b8-ab25a5b6647a/screenshots/screenshot-0001.png",
+      "mediaType": "image/png",
+      "capturedAt": "2026-09-24T03:04:47.678Z"
+    },
+    {
+      "evidenceId": "9df5db21-6d5d-4fda-9e38-db482cb1e4dd",
+      "runId": "hitl-demo-e118c9af-a6e5-4898-b5b8-ab25a5b6647a",
+      "kind": "screenshot",
+      "relativePath": "hitl-demo-e118c9af-a6e5-4898-b5b8-ab25a5b6647a/screenshots/screenshot-0002.png",
+      "mediaType": "image/png",
+      "capturedAt": "2026-09-24T03:05:57.973Z"
+    },
+    {
+      "evidenceId": "2e879986-f458-4b17-a422-06a3032df6b9",
+      "runId": "hitl-demo-e118c9af-a6e5-4898-b5b8-ab25a5b6647a",
+      "kind": "screenshot",
+      "relativePath": "hitl-demo-e118c9af-a6e5-4898-b5b8-ab25a5b6647a/screenshots/screenshot-0003.png",
+      "mediaType": "image/png",
+      "capturedAt": "2026-09-24T03:08:29.144Z"
+    },
+    {
+      "evidenceId": "2cfae474-a0e4-491e-8daf-7f1eb831009d",
+      "runId": "hitl-demo-e118c9af-a6e5-4898-b5b8-ab25a5b6647a",
+      "kind": "screenshot",
+      "relativePath": "hitl-demo-e118c9af-a6e5-4898-b5b8-ab25a5b6647a/screenshots/screenshot-0004.png",
+      "mediaType": "image/png",
+      "capturedAt": "2026-09-24T03:08:59.005Z"
+    }
+  ]
+}

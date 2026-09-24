@@ -1,0 +1,152 @@
+{
+  "request": {
+    "id": "hitl-7a06d4e7-11c5-43ae-b65b-e9c9ea87534c",
+    "sessionId": "35fdd9ca-c7c2-46ae-a863-fa266ac7c815",
+    "source": "REPLAY",
+    "capabilityId": "prepare_new_savings_subaccount",
+    "capabilityVersion": "1.0.0",
+    "stepId": "confirm-create",
+    "reasonCode": "HUMAN_APPROVAL_REQUIRED",
+    "reason": "Confirm Create Sub-Account is irreversible and requires a human operator.",
+    "observedState": "Synthetic sub-account review screen is open with the final confirmation button visible.",
+    "evidenceRefs": [
+      {
+        "evidenceId": "d8ac51da-bed5-4d74-9e98-981a54cf5d76",
+        "runId": "hitl-demo-e118c9af-a6e5-4898-b5b8-ab25a5b6647a",
+        "kind": "screenshot",
+        "relativePath": "hitl-demo-e118c9af-a6e5-4898-b5b8-ab25a5b6647a/screenshots/screenshot-0001.png",
+        "mediaType": "image/png",
+        "capturedAt": "2026-09-24T03:04:47.678Z"
+      },
+      {
+        "evidenceId": "9df5db21-6d5d-4fda-9e38-db482cb1e4dd",
+        "runId": "hitl-demo-e118c9af-a6e5-4898-b5b8-ab25a5b6647a",
+        "kind": "screenshot",
+        "relativePath": "hitl-demo-e118c9af-a6e5-4898-b5b8-ab25a5b6647a/screenshots/screenshot-0002.png",
+        "mediaType": "image/png",
+        "capturedAt": "2026-09-24T03:05:57.973Z"
+      },
+      {
+        "evidenceId": "2e879986-f458-4b17-a422-06a3032df6b9",
+        "runId": "hitl-demo-e118c9af-a6e5-4898-b5b8-ab25a5b6647a",
+        "kind": "screenshot",
+        "relativePath": "hitl-demo-e118c9af-a6e5-4898-b5b8-ab25a5b6647a/screenshots/screenshot-0003.png",
+        "mediaType": "image/png",
+        "capturedAt": "2026-09-24T03:08:29.144Z"
+      },
+      {
+        "evidenceId": "2cfae474-a0e4-491e-8daf-7f1eb831009d",
+        "runId": "hitl-demo-e118c9af-a6e5-4898-b5b8-ab25a5b6647a",
+        "kind": "screenshot",
+        "relativePath": "hitl-demo-e118c9af-a6e5-4898-b5b8-ab25a5b6647a/screenshots/screenshot-0004.png",
+        "mediaType": "image/png",
+        "capturedAt": "2026-09-24T03:08:59.005Z"
+      }
+    ],
+    "createdAt": "2026-09-24T03:04:47.686Z",
+    "status": "RESOLVED"
+  },
+  "acquisition": {
+    "acquisitionId": "1ffbdef2-514f-4554-9291-45b7add9a140",
+    "acquiredAt": "2026-09-24T03:05:57.841Z"
+  },
+  "humanActions": [
+    {
+      "actionId": "1ffbdef2-514f-4554-9291-45b7add9a140",
+      "interventionId": "hitl-7a06d4e7-11c5-43ae-b65b-e9c9ea87534c",
+      "sessionId": "35fdd9ca-c7c2-46ae-a863-fa266ac7c815",
+      "kind": "CONTROL_ACQUIRED",
+      "summary": "Human operator acquired intervention control.",
+      "occurredAt": "2026-09-24T03:05:57.841Z",
+      "evidenceRefs": [],
+      "details": {
+        "acquisitionId": "1ffbdef2-514f-4554-9291-45b7add9a140"
+      }
+    }
+  ],
+  "auditTrail": [
+    {
+      "eventId": "725ad0a5-20a7-4aa5-bdf6-80b12a9453ac",
+      "interventionId": "hitl-7a06d4e7-11c5-43ae-b65b-e9c9ea87534c",
+      "sessionId": "35fdd9ca-c7c2-46ae-a863-fa266ac7c815",
+      "type": "intervention.created",
+      "actor": "AUTOMATION",
+      "occurredAt": "2026-09-24T03:04:47.686Z",
+      "summary": "Automation created an intervention and requested human involvement.",
+      "source": "REPLAY",
+      "evidenceRefs": [
+        "{\"evidenceId\":\"d8ac51da-bed5-4d74-9e98-981a54cf5d76\",\"runId\":\"hitl-demo-e118c9af-a6e5-4898-b5b8-ab25a5b6647a\",\"kind\":\"screenshot\",\"relativePath\":\"hitl-demo-e118c9af-a6e5-4898-b5b8-ab25a5b6647a/screenshots/screenshot-0001.png\",\"mediaType\":\"image/png\",\"capturedAt\":\"2026-09-24T03:04:47.678Z\"}"
+      ]
+    },
+    {
+      "eventId": "7f40ba12-1c43-4c57-b580-bf7e07b74ec6",
+      "interventionId": "hitl-7a06d4e7-11c5-43ae-b65b-e9c9ea87534c",
+      "sessionId": "35fdd9ca-c7c2-46ae-a863-fa266ac7c815",
+      "type": "human.acquire_requested",
+      "actor": "HUMAN",
+      "occurredAt": "2026-09-24T03:05:57.835Z",
+      "summary": "Human operator requested control of the paused live session.",
+      "source": "REPLAY",
+      "evidenceRefs": []
+    },
+    {
+      "eventId": "57a3b702-1f76-49b6-a2ad-d69df19b8570",
+      "interventionId": "hitl-7a06d4e7-11c5-43ae-b65b-e9c9ea87534c",
+      "sessionId": "35fdd9ca-c7c2-46ae-a863-fa266ac7c815",
+      "type": "human.control_acquired",
+      "actor": "HUMAN",
+      "occurredAt": "2026-09-24T03:05:57.841Z",
+      "summary": "Human operator acquired control of the paused live session.",
+      "source": "REPLAY",
+      "evidenceRefs": []
+    },
+    {
+      "eventId": "68eb1b4c-f5a0-4c85-823e-40aa97de741f",
+      "interventionId": "hitl-7a06d4e7-11c5-43ae-b65b-e9c9ea87534c",
+      "sessionId": "35fdd9ca-c7c2-46ae-a863-fa266ac7c815",
+      "type": "human.action_performed",
+      "actor": "HUMAN",
+      "occurredAt": "2026-09-24T03:08:29.161Z",
+      "summary": "Human completed final synthetic sub-account action",
+      "source": "REPLAY",
+      "evidenceRefs": [
+        "{\"evidenceId\":\"2e879986-f458-4b17-a422-06a3032df6b9\",\"runId\":\"hitl-demo-e118c9af-a6e5-4898-b5b8-ab25a5b6647a\",\"kind\":\"screenshot\",\"relativePath\":\"hitl-demo-e118c9af-a6e5-4898-b5b8-ab25a5b6647a/screenshots/screenshot-0003.png\",\"mediaType\":\"image/png\",\"capturedAt\":\"2026-09-24T03:08:29.144Z\"}"
+      ]
+    },
+    {
+      "eventId": "3ae2aed0-904a-42a4-9459-4b813b477189",
+      "interventionId": "hitl-7a06d4e7-11c5-43ae-b65b-e9c9ea87534c",
+      "sessionId": "35fdd9ca-c7c2-46ae-a863-fa266ac7c815",
+      "type": "human.resume_requested",
+      "actor": "HUMAN",
+      "occurredAt": "2026-09-24T03:08:58.896Z",
+      "summary": "Human operator requested automation resume.",
+      "source": "REPLAY",
+      "evidenceRefs": []
+    },
+    {
+      "eventId": "d6ad26e7-de43-4144-8343-5865a22e2447",
+      "interventionId": "hitl-7a06d4e7-11c5-43ae-b65b-e9c9ea87534c",
+      "sessionId": "35fdd9ca-c7c2-46ae-a863-fa266ac7c815",
+      "type": "human.control_released",
+      "actor": "HUMAN",
+      "occurredAt": "2026-09-24T03:08:58.901Z",
+      "summary": "Human operator released control back to REPLAY.",
+      "source": "REPLAY",
+      "evidenceRefs": []
+    },
+    {
+      "eventId": "15f18fd8-fed6-4582-b963-44f42ca297fd",
+      "interventionId": "hitl-7a06d4e7-11c5-43ae-b65b-e9c9ea87534c",
+      "sessionId": "35fdd9ca-c7c2-46ae-a863-fa266ac7c815",
+      "type": "automation.control_restored",
+      "actor": "AUTOMATION",
+      "occurredAt": "2026-09-24T03:08:59.022Z",
+      "summary": "REPLAY control restored on the same live session.",
+      "source": "REPLAY",
+      "evidenceRefs": [
+        "{\"evidenceId\":\"2cfae474-a0e4-491e-8daf-7f1eb831009d\",\"runId\":\"hitl-demo-e118c9af-a6e5-4898-b5b8-ab25a5b6647a\",\"kind\":\"screenshot\",\"relativePath\":\"hitl-demo-e118c9af-a6e5-4898-b5b8-ab25a5b6647a/screenshots/screenshot-0004.png\",\"mediaType\":\"image/png\",\"capturedAt\":\"2026-09-24T03:08:59.005Z\"}"
+      ]
+    }
+  ]
+}

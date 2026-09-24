@@ -36,6 +36,8 @@ evidence/*
 !evidence/replay-recovery/**
 !evidence/replay-failure/
 !evidence/replay-failure/**
+!evidence/human-handoff/
+!evidence/human-handoff/**
 
 .DS_Store
 Thumbs.db
