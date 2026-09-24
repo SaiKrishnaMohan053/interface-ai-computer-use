@@ -13,6 +13,7 @@
     "discover": "node --env-file-if-exists=.env --import tsx src/cli/discover.ts",
     "compile-artifact": "node --import tsx src/cli/compile-artifact.ts",
     "freeze-replay-evidence": "node --import tsx src/cli/freeze-replay-evidence.ts",
+    "freeze-human-handoff-evidence": "node --import tsx src/cli/freeze-human-handoff-evidence.ts",
     "intervention:list": "node --env-file-if-exists=.env --import tsx src/cli/intervention-cli.ts list",
     "intervention:show": "node --env-file-if-exists=.env --import tsx src/cli/intervention-cli.ts show",
     "intervention:acquire": "node --env-file-if-exists=.env --import tsx src/cli/intervention-cli.ts acquire",

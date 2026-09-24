@@ -145,3 +145,10 @@ export type {
   InterventionEvidenceContinuityOptions,
   InterventionScreenshotDataHandling,
 } from './intervention-evidence.js';
+
+export { freezeHumanHandoffEvidencePackage } from './intervention-evidence-package.js';
+
+export type {
+  FreezeHumanHandoffEvidenceInput,
+  FrozenHumanHandoffEvidencePackage,
+} from './intervention-evidence-package.js';
