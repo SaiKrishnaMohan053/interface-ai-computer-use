@@ -1,4 +1,4 @@
-export {
+﻿export {
   HUMAN_ACTION_KINDS,
   INTERVENTION_RESOLUTION_CODES,
   INTERVENTION_RESOLUTION_KINDS,
@@ -152,3 +152,10 @@ export type {
   FreezeHumanHandoffEvidenceInput,
   FrozenHumanHandoffEvidencePackage,
 } from './intervention-evidence-package.js';
+
+export { verifyHumanHandoffEvidenceIntegrity } from './intervention-evidence-integrity.js';
+
+export type {
+  HumanHandoffIntegrityEntry,
+  HumanHandoffIntegrityResult,
+} from './intervention-evidence-integrity.js';
