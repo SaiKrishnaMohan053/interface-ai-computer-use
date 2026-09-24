@@ -1,9 +1,10 @@
 import { createServer } from 'node:http';
 import type { Server, ServerResponse } from 'node:http';
+
 import { findMember, formatBalance, getMemberAccounts, searchMemberByName } from './data.js';
-import type { Member, SubAccount } from './types.js';
 import { evaluateScenario } from './scenario-controller.js';
 import type { ScenarioDecision } from './scenario-controller.js';
+import type { Member, SubAccount } from './types.js';
 
 function escapeHtml(value: string): string {
   return value
@@ -107,6 +108,11 @@ function layout(title: string, content: string): string {
       padding: 14px;
       background: #fff4d6;
       border: 1px solid #d8bd6c;
+    }
+    .success {
+      padding: 14px;
+      background: #e6f5e8;
+      border: 1px solid #76a77b;
     }
     .table-scroll { overflow-x: auto; }
     dt { margin-top: 16px; font-weight: bold; }
@@ -343,13 +349,12 @@ function renderSubAccountForm(response: ServerResponse, member: Member): void {
   );
 }
 
-function renderReview(response: ServerResponse, member: Member, url: URL): void {
+function validatedSubAccountDraft(member: Member, url: URL): SubAccount | null {
   const parentIds = url.searchParams.getAll('parentAccountId');
   const nicknames = url.searchParams.getAll('nickname');
 
   if (parentIds.length !== 1 || nicknames.length !== 1) {
-    sendError(response, 400, 'INVALID_INPUT', 'Provide exactly one parent account and nickname.');
-    return;
+    return null;
   }
 
   const parentAccountId = parentIds[0] ?? '';
@@ -361,6 +366,22 @@ function renderReview(response: ServerResponse, member: Member, url: URL): void 
   );
 
   if (!parent || nickname.length === 0 || rawNickname.length > 40) {
+    return null;
+  }
+
+  return {
+    memberId: member.id,
+    parentAccountId: parent.id,
+    nickname,
+    type: 'Savings',
+    status: 'DRAFT',
+  };
+}
+
+function renderReview(response: ServerResponse, member: Member, url: URL): void {
+  const draft = validatedSubAccountDraft(member, url);
+
+  if (draft === null) {
     sendError(
       response,
       400,
@@ -370,13 +391,10 @@ function renderReview(response: ServerResponse, member: Member, url: URL): void 
     return;
   }
 
-  const draft: SubAccount = {
-    memberId: member.id,
-    parentAccountId: parent.id,
-    nickname,
-    type: 'Savings',
-    status: 'DRAFT',
-  };
+  const commitUrl = new URL(`${memberPath(member)}/subaccounts/commit`, 'http://127.0.0.1');
+
+  commitUrl.searchParams.set('parentAccountId', draft.parentAccountId);
+  commitUrl.searchParams.set('nickname', draft.nickname);
 
   sendHtml(
     response,
@@ -390,7 +408,51 @@ function renderReview(response: ServerResponse, member: Member, url: URL): void 
       <dt>Account Type</dt><dd>${escapeHtml(draft.type)}</dd>
       <dt>Status</dt><dd>${escapeHtml(draft.status)}</dd>
     </dl>
+
+    <form method="get" action="${memberPath(member)}/subaccounts/commit">
+      <input
+        type="hidden"
+        name="parentAccountId"
+        value="${escapeHtml(draft.parentAccountId)}"
+      >
+      <input
+        type="hidden"
+        name="nickname"
+        value="${escapeHtml(draft.nickname)}"
+      >
+      <button type="submit">Confirm Create Sub-Account</button>
+    </form>
+
     <p><a href="${memberPath(member)}/subaccounts/new">Back to Form</a></p>
+    <p><a href="${memberPath(member)}/accounts">Accounts</a></p>`,
+  );
+}
+
+function renderCommit(response: ServerResponse, member: Member, url: URL): void {
+  const draft = validatedSubAccountDraft(member, url);
+
+  if (draft === null) {
+    sendError(response, 400, 'INVALID_INPUT', 'The submitted sub-account draft is invalid.');
+    return;
+  }
+
+  sendHtml(
+    response,
+    200,
+    'Sub-account Created',
+    `<div class="success" role="status">
+      <strong>Sub-account created</strong>
+      <p>
+        Synthetic demonstration only. No real banking transaction occurred.
+      </p>
+    </div>
+    <dl>
+      <dt>Member</dt><dd>${escapeHtml(member.displayName)}</dd>
+      <dt>Parent Account</dt><dd>${escapeHtml(draft.parentAccountId)}</dd>
+      <dt>Nickname</dt><dd>${escapeHtml(draft.nickname)}</dd>
+      <dt>Account Type</dt><dd>${escapeHtml(draft.type)}</dd>
+      <dt>Status</dt><dd>CREATED</dd>
+    </dl>
     <p><a href="${memberPath(member)}/accounts">Accounts</a></p>`,
   );
 }
@@ -456,9 +518,10 @@ function renderScenario(response: ServerResponse, decision: ScenarioDecision): b
 }
 
 function routeRequest(response: ServerResponse, url: URL, cookieHeader: string): void {
-  const match = /^\/member\/([0-9]{5})(\/accounts|\/subaccounts\/new|\/subaccounts\/review)?$/.exec(
-    url.pathname,
-  );
+  const match =
+    /^\/member\/([0-9]{5})(\/accounts|\/subaccounts\/new|\/subaccounts\/review|\/subaccounts\/commit)?$/.exec(
+      url.pathname,
+    );
 
   const memberId = match?.[1];
   const member = memberId === undefined ? undefined : findMember(memberId);
@@ -508,6 +571,10 @@ function routeRequest(response: ServerResponse, url: URL, cookieHeader: string):
 
     case '/subaccounts/review':
       renderReview(response, member, url);
+      return;
+
+    case '/subaccounts/commit':
+      renderCommit(response, member, url);
       return;
 
     default:

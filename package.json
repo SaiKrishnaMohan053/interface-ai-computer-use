@@ -1,11 +1,11 @@
-﻿{
+{
   "name": "interface-ai-computer-use",
   "version": "0.1.0",
   "private": true,
   "description": "Policy-controlled computer-use automation with deterministic replay.",
   "type": "module",
   "engines": {
-    "node": "\u003e=24 \u003c25"
+    "node": ">=24 <25"
   },
   "scripts": {
     "dev": "tsx watch src/cli/dev.ts",
@@ -13,6 +13,7 @@
     "discover": "node --env-file-if-exists=.env --import tsx src/cli/discover.ts",
     "compile-artifact": "node --import tsx src/cli/compile-artifact.ts",
     "freeze-replay-evidence": "node --import tsx src/cli/freeze-replay-evidence.ts",
+    "hitl-demo": "node --env-file-if-exists=.env --import tsx src/cli/run-hitl-demo.ts",
     "freeze-human-handoff-evidence": "node --import tsx src/cli/freeze-human-handoff-evidence.ts",
     "intervention:list": "node --env-file-if-exists=.env --import tsx src/cli/intervention-cli.ts list",
     "intervention:show": "node --env-file-if-exists=.env --import tsx src/cli/intervention-cli.ts show",
