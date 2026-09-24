@@ -2,9 +2,9 @@
   "runId": "replay-success",
   "mode": "REPLAY",
   "status": "success",
-  "startedAt": "2026-09-24T22:11:29.328Z",
-  "finishedAt": "2026-09-24T22:11:32.708Z",
-  "durationMs": 3380,
+  "startedAt": "2026-09-24T22:44:46.618Z",
+  "finishedAt": "2026-09-24T22:44:49.669Z",
+  "durationMs": 3051,
   "result": {
     "status": "success",
     "stepsExecuted": 4,
@@ -14,12 +14,12 @@
   },
   "evidenceRefs": [
     {
-      "evidenceId": "43b7ad01-9042-42ab-8161-237c122ac678",
+      "evidenceId": "db59fa5f-a944-40eb-92e7-08763cb4168f",
       "runId": "replay-success",
       "kind": "event_log",
       "relativePath": "replay-success/events.jsonl",
       "mediaType": "application/x-ndjson",
-      "capturedAt": "2026-09-24T22:11:29.328Z"
+      "capturedAt": "2026-09-24T22:44:46.618Z"
     }
   ]
 }

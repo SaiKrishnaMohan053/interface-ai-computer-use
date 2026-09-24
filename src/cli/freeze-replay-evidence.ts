@@ -219,7 +219,7 @@ async function writeChecksums(directory: string): Promise<void> {
 
     const digest = createHash('sha256').update(bytes).digest('hex');
 
-    const name = relative(directory, file).replaceAll('\\\\', '/');
+    const name = relative(directory, file).replaceAll('\\', '/');
 
     lines.push(`${digest}  ${name}`);
   }
