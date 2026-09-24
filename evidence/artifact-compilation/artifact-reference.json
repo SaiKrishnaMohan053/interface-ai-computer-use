@@ -1,0 +1,11 @@
+{
+  "capabilityId": "lookup_savings_balance",
+  "version": "1.0.0",
+  "artifactPath": "artifacts/lookup_savings_balance/1.0.0.json",
+  "sha256": "1462d59102f9f0440e702e76343ba3d8ca9cdd1d4eeba01bb271fe915c22e40e",
+  "hashAlgorithm": "SHA-256",
+  "provenance": {
+    "discoveryRunId": "9635c0c9-dc3a-4b64-aa38-b1f48a359ea0",
+    "compilerVersion": "1"
+  }
+}

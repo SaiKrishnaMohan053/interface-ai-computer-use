@@ -1,0 +1,16 @@
+{
+  "status": "success",
+  "capabilityId": "lookup_savings_balance",
+  "capabilityVersion": "1.0.0",
+  "schemaVersion": "1.0",
+  "discoveryRunId": "9635c0c9-dc3a-4b64-aa38-b1f48a359ea0",
+  "compilerVersion": "1",
+  "compiledAt": "2026-09-18T16:00:00.000Z",
+  "stepIds": [
+    "enter-member-search",
+    "submit-member-search",
+    "open-accounts",
+    "read-savings-balance"
+  ],
+  "artifactPath": "artifacts/lookup_savings_balance/1.0.0.json"
+}

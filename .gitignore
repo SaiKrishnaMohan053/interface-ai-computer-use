@@ -38,6 +38,8 @@ evidence/*
 !evidence/replay-failure/**
 !evidence/human-handoff/
 !evidence/human-handoff/**
+!evidence/artifact-compilation/
+!evidence/artifact-compilation/**
 
 .DS_Store
 Thumbs.db

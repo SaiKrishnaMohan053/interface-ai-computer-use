@@ -1,0 +1,20 @@
+{
+  "status": "success",
+  "schemaValidation": "passed",
+  "semanticValidation": "passed",
+  "persistenceSafety": "passed",
+  "deterministicSerialization": "passed",
+  "checks": {
+    "capabilityId": "lookup_savings_balance",
+    "inputNames": [
+      "memberName"
+    ],
+    "outputNames": [
+      "savingsBalance"
+    ],
+    "businessOutcomeCodes": [
+      "MEMBER_NOT_FOUND"
+    ],
+    "stepCount": 4
+  }
+}

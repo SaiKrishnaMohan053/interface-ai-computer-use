@@ -149,28 +149,6 @@ describe('artifact compilation reviewer evidence', () => {
       `${JSON.stringify(artifactReference, null, 2)}\n`,
     );
 
-    const evidenceFiles = [compileResultPath, validationResultPath, artifactReferencePath];
-
-    const evidenceHashes = await Promise.all(
-      evidenceFiles.map(async (path) => {
-        const bytes = await readFile(path);
-
-        return {
-          path,
-          hash: sha256Bytes(bytes),
-        };
-      }),
-    );
-
-    const sums = [
-      `${artifactHash}  ../../${ARTIFACT_RELATIVE_PATH}`,
-      ...evidenceHashes.map(
-        ({ path, hash }) => `${hash}  ${relative(EVIDENCE_DIRECTORY, path).replaceAll('\\', '/')}`,
-      ),
-    ].join('\n');
-
-    await writeDeterministicFile(join(EVIDENCE_DIRECTORY, 'SHA256SUMS.txt'), `${sums}\n`);
-
     const readme = `# Artifact Compilation Evidence
 
 This package documents deterministic compilation of the genuine successful Phase 2 discovery run into the reusable capability artifact \`lookup_savings_balance\` version \`1.0.0\`.
@@ -198,6 +176,37 @@ This package documents deterministic compilation of the genuine successful Phase
 
 This evidence package intentionally excludes raw model responses, decision rationale, browser/runtime handles, screenshots, observations, session state, and invocation-specific discovery values.
 `;
+
+    const readmePath = join(EVIDENCE_DIRECTORY, 'README.md');
+
+    await writeDeterministicFile(readmePath, readme);
+
+    const evidenceFiles = [
+      compileResultPath,
+      validationResultPath,
+      artifactReferencePath,
+      readmePath,
+    ];
+
+    const evidenceHashes = await Promise.all(
+      evidenceFiles.map(async (path) => {
+        const bytes = await readFile(path);
+
+        return {
+          path,
+          hash: sha256Bytes(bytes),
+        };
+      }),
+    );
+
+    const sums = [
+      `${artifactHash}  ../../${ARTIFACT_RELATIVE_PATH}`,
+      ...evidenceHashes.map(
+        ({ path, hash }) => `${hash}  ${relative(EVIDENCE_DIRECTORY, path).replaceAll('\\', '/')}`,
+      ),
+    ].join('\n');
+
+    await writeDeterministicFile(join(EVIDENCE_DIRECTORY, 'SHA256SUMS.txt'), `${sums}\n`);
 
     await writeDeterministicFile(join(EVIDENCE_DIRECTORY, 'README.md'), readme);
 
