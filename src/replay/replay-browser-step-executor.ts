@@ -1,4 +1,4 @@
-import type { CapabilityStep, WaitPolicy } from '../artifact/index.js';
+﻿import type { CapabilityStep, WaitPolicy } from '../artifact/index.js';
 
 import type { PolicyEngine } from '../policy/index.js';
 
@@ -302,6 +302,8 @@ export class ReplayBrowserStepExecutor implements ReplayStepExecutor {
     const initialInterstitial = await recoverKnownReplayInterstitial({
       adapter: this.options.surface,
 
+      assertAutomationOwnership: this.options.assertAutomationOwnership,
+
       step,
 
       timeoutMs: this.operationTimeoutMs,
@@ -515,6 +517,8 @@ export class ReplayBrowserStepExecutor implements ReplayStepExecutor {
 
     const interstitial = await recoverKnownReplayInterstitial({
       adapter: this.options.surface,
+
+      assertAutomationOwnership: this.options.assertAutomationOwnership,
 
       step,
 

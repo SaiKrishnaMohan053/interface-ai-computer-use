@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+﻿import { createHash } from 'node:crypto';
 
 import { once } from 'node:events';
 
@@ -295,17 +295,17 @@ ${expected[definition.scenario]}
 
 
 
-- \`run.json\` — sanitized run metadata
+- \`run.json\` â€” sanitized run metadata
 
-- \`events.jsonl\` — sanitized structured event log
+- \`events.jsonl\` â€” sanitized structured event log
 
-- \`result.json\` — sanitized terminal result
+- \`result.json\` â€” sanitized terminal result
 
 ${
   definition.scenario === 'failure'
-    ? '- `screenshots/` — synthetic-fixture failure screenshot\n'
+    ? '- `screenshots/` â€” synthetic-fixture failure screenshot\n'
     : ''
-}- \`SHA256SUMS.txt\` — integrity hashes for this evidence package
+}- \`SHA256SUMS.txt\` â€” integrity hashes for this evidence package
 
 
 
@@ -381,6 +381,25 @@ async function runScenario(origin: string, definition: ScenarioDefinition): Prom
      * Bootstrap navigation is also an automated browser
      * operation, so verify REPLAY ownership immediately
      * before it starts.
+     */
+    const entryPolicy = context.policyEngine.evaluate({
+      url: entryUrl,
+
+      action: {
+        kind: 'navigate',
+      },
+
+      systemRiskLevel: 'READ_ONLY',
+    });
+
+    if (entryPolicy.decision !== 'ALLOW') {
+      throw new Error(`Initial replay navigation was not policy-allowed: ${entryPolicy.reason}`);
+    }
+
+    /*
+     * Bootstrap navigation is still an automated browser action.
+     * It therefore passes policy first and the same hard REPLAY
+     * ownership boundary immediately before surface execution.
      */
     context.sessionManager.access('REPLAY');
 

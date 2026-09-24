@@ -1,4 +1,4 @@
-import type { CapabilityStep } from '../artifact/index.js';
+﻿import type { CapabilityStep } from '../artifact/index.js';
 
 import type { RecoverableCondition } from '../runtime/index.js';
 
@@ -9,6 +9,8 @@ import type { TargetStrategy } from '../targeting/index.js';
 import { executeReplayDialogRecovery } from './replay-dialog-recovery.js';
 
 import type { ReplayDialogRecoveryAttempt } from './replay-dialog-recovery.js';
+
+import { performReplayOwnedAction } from './replay-owned-action.js';
 
 import { TargetResolver } from '../targeting/index.js';
 
@@ -22,6 +24,8 @@ export interface ReplayKnownInterstitialInput {
   readonly signal?: AbortSignal;
 
   readonly recordAttempt: (attempt: ReplayDialogRecoveryAttempt) => Promise<void>;
+
+  readonly assertAutomationOwnership: () => void;
 }
 
 export type ReplayKnownInterstitialResult =
@@ -217,8 +221,12 @@ export async function recoverKnownReplayInterstitial(
         return resolved;
       }
 
-      const performed = await input.adapter.perform(
-        {
+      const ownedAction = await performReplayOwnedAction({
+        surface: input.adapter,
+
+        assertAutomationOwnership: input.assertAutomationOwnership,
+
+        request: {
           actionId: `${input.step.id}:known-interstitial:continue`,
 
           action: {
@@ -228,7 +236,7 @@ export async function recoverKnownReplayInterstitial(
           },
         },
 
-        {
+        options: {
           timeoutMs: input.timeoutMs,
 
           ...(input.signal === undefined
@@ -237,7 +245,19 @@ export async function recoverKnownReplayInterstitial(
                 signal: input.signal,
               }),
         },
-      );
+      });
+
+      if (ownedAction.status === 'ownership_blocked') {
+        return {
+          status: 'failure',
+
+          code: 'ACTION_FAILED',
+
+          message: ownedAction.message,
+        };
+      }
+
+      const performed = ownedAction.result;
 
       if (performed.status === 'failure') {
         return {
