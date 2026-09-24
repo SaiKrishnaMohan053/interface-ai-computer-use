@@ -442,6 +442,24 @@ export class ReplayBrowserStepExecutor implements ReplayStepExecutor {
       });
     }
 
+    /*
+     * First ownership gate after runtime risk + policy authorization.
+     *
+     * Do not resolve targets after HUMAN has acquired the session.
+     * performReplayOwnedAction() performs the second ownership check
+     * immediately before SurfaceAdapter.perform().
+     */
+    try {
+      this.options.assertAutomationOwnership();
+    } catch (error) {
+      return failure(
+        'ACTION_FAILED',
+        error instanceof Error
+          ? `Replay lost session ownership before target resolution: ${error.message}`
+          : 'Replay lost session ownership before target resolution.',
+      );
+    }
+
     let target: ResolvedTarget | null = null;
 
     if (step.target !== undefined) {

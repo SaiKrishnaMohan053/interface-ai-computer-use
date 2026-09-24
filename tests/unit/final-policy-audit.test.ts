@@ -99,6 +99,50 @@ describe('final automated-action policy audit', () => {
     expect(policyWindow).toContain("entryPolicy.decision !== 'ALLOW'");
   });
 
+  it('keeps HITL demo automated execution behind policy and REPLAY ownership checks', async () => {
+    const source = await readFile('src/cli/run-hitl-demo.ts', 'utf8');
+
+    const policyIndex = source.indexOf('const decision = context.policyEngine.evaluate({');
+    const firstOwnershipIndex = source.indexOf(
+      "context.sessionManager.access('REPLAY');",
+      policyIndex,
+    );
+    const performIndex = source.indexOf('context.surface.perform(', firstOwnershipIndex);
+
+    expect(policyIndex).toBeGreaterThanOrEqual(0);
+    expect(firstOwnershipIndex).toBeGreaterThan(policyIndex);
+    expect(performIndex).toBeGreaterThan(firstOwnershipIndex);
+
+    const ownershipBeforePerform = source.slice(Math.max(0, performIndex - 800), performIndex);
+
+    expect(ownershipBeforePerform).toContain("context.sessionManager.access('REPLAY');");
+
+    expect(source).not.toContain('automatedPage');
+    expect(source).not.toContain('recordAllowedAction');
+    expect(source).not.toContain('.goto(');
+    expect(source).not.toContain('.fill(');
+    expect(source).not.toContain('.selectOption(');
+  });
+
+  it('checks replay ownership after policy and before target resolution', async () => {
+    const source = await readFile('src/replay/replay-browser-step-executor.ts', 'utf8');
+
+    const policyIndex = source.indexOf('const policy = evaluateReplayPolicy({');
+
+    const ownershipIndex = source.indexOf('this.options.assertAutomationOwnership();', policyIndex);
+
+    const resolutionIndex = source.indexOf(
+      'const resolution = await resolveReplayStepTarget({',
+      ownershipIndex,
+    );
+
+    expect(policyIndex).toBeGreaterThanOrEqual(0);
+    expect(ownershipIndex).toBeGreaterThan(policyIndex);
+    expect(resolutionIndex).toBeGreaterThan(ownershipIndex);
+
+    expect(source).toContain('performReplayOwnedAction({');
+  });
+
   it('does not introduce additional direct SurfaceAdapter.perform automation paths', async () => {
     const files = await sourceFiles('src');
 
@@ -114,7 +158,9 @@ describe('final automated-action policy audit', () => {
 
     expect(directPerformFiles).toEqual([
       'src/cli/freeze-replay-evidence.ts',
+      'src/cli/run-hitl-demo.ts',
       'src/discovery/discovery-engine.ts',
+      'src/replay/replay-browser-step-executor.ts',
       'src/replay/replay-owned-action.ts',
     ]);
   });

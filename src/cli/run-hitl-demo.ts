@@ -1,6 +1,9 @@
 import { randomUUID } from 'node:crypto';
+
 import { once } from 'node:events';
+
 import type { Server } from 'node:http';
+
 import { resolve } from 'node:path';
 
 import { createDemoServer } from '../../demo-app/server.js';
@@ -23,20 +26,28 @@ import { evaluateReplayPolicy, resolveReplayResume } from '../replay/index.js';
 
 import { RunCoordinator } from '../runtime/index.js';
 
+import type { ExecutableSurfaceAction, ResolvedTarget } from '../surface/index.js';
+
 import { PlaywrightSurface } from '../surface/playwright/index.js';
 
 import type { PlaywrightStrategy } from '../surface/playwright/index.js';
 
 const MEMBER_ID = '12345';
+
 const CAPABILITY_ID = 'prepare_new_savings_subaccount';
+
 const CAPABILITY_VERSION = '1.0.0';
+
 const NICKNAME = 'Human Handoff Savings';
+
 const EVIDENCE_ROOT = resolve('evidence');
 
 function createPolicy(origin: string): PolicyEngine {
   return new PolicyEngine({
     policyId: 'hitl-demo-policy',
+
     version: 1,
+
     defaultDecision: 'DENY',
 
     allowedOrigins: [origin],
@@ -44,17 +55,24 @@ function createPolicy(origin: string): PolicyEngine {
     allowedRoutes: [
       {
         routeId: 'subaccount-commit',
+
         description: 'Synthetic sub-account commit route',
+
         match: {
           kind: 'exact',
+
           pathname: `/member/${MEMBER_ID}/subaccounts/commit`,
         },
       },
+
       {
         routeId: 'member-pages',
+
         description: 'Synthetic member servicing routes',
+
         match: {
           kind: 'prefix',
+
           pathname: '/member/',
         },
       },
@@ -65,31 +83,47 @@ function createPolicy(origin: string): PolicyEngine {
     riskRules: [
       {
         ruleId: 'irreversible-subaccount-commit',
+
         description: 'Committing a sub-account requires human approval',
+
         match: {
           actions: ['click'],
+
           routeIds: ['subaccount-commit'],
         },
+
         riskLevel: 'IRREVERSIBLE',
+
         decision: 'REQUIRE_HUMAN',
       },
+
       {
         ruleId: 'read-only-actions',
+
         description: 'Read-only actions may run automatically',
+
         match: {
           actions: ['read', 'wait'],
         },
+
         riskLevel: 'READ_ONLY',
+
         decision: 'ALLOW',
       },
+
       {
         ruleId: 'reversible-member-actions',
+
         description: 'Reversible member navigation and input are allowed',
+
         match: {
           actions: ['navigate', 'type', 'select', 'click'],
+
           routeIds: ['member-pages'],
         },
+
         riskLevel: 'REVERSIBLE',
+
         decision: 'ALLOW',
       },
     ],
@@ -99,6 +133,7 @@ function createPolicy(origin: string): PolicyEngine {
 function confirmCreateStep(): CapabilityStep {
   return {
     id: 'confirm-create',
+
     description: 'Confirm Create Sub-Account',
 
     action: {
@@ -113,10 +148,14 @@ function confirmCreateStep(): CapabilityStep {
       strategies: [
         {
           kind: 'role-name',
+
           role: 'button',
+
           name: {
             value: 'Confirm Create Sub-Account',
+
             mode: 'exact',
+
             caseSensitive: false,
           },
         },
@@ -128,8 +167,11 @@ function confirmCreateStep(): CapabilityStep {
     postconditions: [
       {
         kind: 'textPresent',
+
         text: 'Sub-account created',
+
         match: 'contains',
+
         caseSensitive: false,
       },
     ],
@@ -145,6 +187,7 @@ async function closeServer(server: Server): Promise<void> {
     server.close((error) => {
       if (error === undefined) {
         resolveClose();
+
         return;
       }
 
@@ -155,6 +198,7 @@ async function closeServer(server: Server): Promise<void> {
 
 async function startDemoServer(): Promise<{
   readonly server: Server;
+
   readonly origin: string;
 }> {
   const server = createDemoServer();
@@ -167,17 +211,20 @@ async function startDemoServer(): Promise<{
 
   if (address === null || typeof address === 'string') {
     await closeServer(server);
+
     throw new Error('Demo server did not expose a TCP port');
   }
 
   return {
     server,
+
     origin: `http://127.0.0.1:${address.port}`,
   };
 }
 
 async function waitForHumanDecision(
   manager: InterventionManager,
+
   interventionId: string,
 ): Promise<'RESOLVED' | 'ABORTED'> {
   for (;;) {
@@ -195,6 +242,7 @@ async function waitForHumanDecision(
 
 async function main(): Promise<void> {
   const runId = `hitl-demo-${randomUUID()}`;
+
   const interventionId = `hitl-${randomUUID()}`;
 
   const demo = await startDemoServer();
@@ -207,6 +255,7 @@ async function main(): Promise<void> {
     createSurface: ({ access, surfaceId }) =>
       new PlaywrightSurface(access.page, {
         sessionId: access.sessionId,
+
         surfaceId,
       }),
   });
@@ -220,26 +269,35 @@ async function main(): Promise<void> {
   const registry = new LiveInterventionRegistry();
 
   let operatorServer: OperatorControlServer | undefined;
+
   let finalized = false;
 
   try {
     const context = await coordinator.start({
       runId,
+
       mode: 'REPLAY',
+
       evidenceRoot: EVIDENCE_ROOT,
+
       headed: true,
+
       timeoutMs: 15_000,
 
       metadata: {
         demo: 'real-human-handoff',
+
         capabilityId: CAPABILITY_ID,
+
         capabilityVersion: CAPABILITY_VERSION,
+
         dataHandling: 'SYNTHETIC_FIXTURE_ONLY',
       },
     });
 
     const evidenceContinuity = new InterventionEvidenceContinuity({
       dataHandling: 'SYNTHETIC_FIXTURE_ONLY',
+
       timeoutMs: 5_000,
     });
 
@@ -247,89 +305,265 @@ async function main(): Promise<void> {
 
     operatorServer = new OperatorControlServer({
       manager,
+
       controller,
+
       liveRegistry: registry,
     });
 
     const operatorAddress = await operatorServer.start();
 
-    const automatedPage = () => context.sessionManager.access('REPLAY').page;
-
-    const recordAllowedAction = async (
-      step: number,
-      url: string,
-      actionKind: 'navigate' | 'type' | 'select' | 'click',
-      execute: () => Promise<void>,
-    ): Promise<void> => {
+    const performAutomatedDemoAction = async (input: {
+      step: number;
+      url: string;
+      actionKind: 'navigate' | 'type' | 'select' | 'click';
+      systemRiskLevel: 'READ_ONLY' | 'REVERSIBLE';
+      target?: {
+        description: string;
+        strategy: PlaywrightStrategy;
+        buildAction: (target: ResolvedTarget) => ExecutableSurfaceAction;
+      };
+    }): Promise<void> => {
+      /*
+       * Risk classification is supplied by deterministic demo code,
+       * never by a model or persisted artifact claim.
+       */
       const decision = context.policyEngine.evaluate({
-        url,
+        url: input.url,
         action: {
-          kind: actionKind,
+          kind: input.actionKind,
         },
+        systemRiskLevel: input.systemRiskLevel,
       });
 
       await context.evidenceRecorder.recordEvent({
-        step,
+        step: input.step,
         eventType: 'policy_decision',
         action: {
-          kind: actionKind,
+          kind: input.actionKind,
         },
         policyDecision: decision,
       });
 
       if (decision.decision !== 'ALLOW') {
         throw new Error(
-          `Safe demo action "${actionKind}" was not policy-allowed: ${decision.reason}`,
+          `Safe demo action "${input.actionKind}" was not policy-allowed: ${decision.reason}`,
         );
       }
 
       /*
-       * Final ownership assertion immediately before browser execution.
+       * First ownership gate after policy authorization.
+       * No target work begins after HUMAN takeover.
        */
       context.sessionManager.access('REPLAY');
 
-      await execute();
+      let action: ExecutableSurfaceAction;
+
+      if (input.actionKind === 'navigate') {
+        action = {
+          kind: 'navigate',
+          destination: input.url,
+        };
+      } else {
+        if (input.target === undefined) {
+          throw new Error(`Demo action "${input.actionKind}" requires a semantic target`);
+        }
+
+        const observation = await context.surface.observe({
+          timeoutMs: 5_000,
+          maxTextLength: 8_000,
+          maxControls: 100,
+        });
+
+        if (observation.status !== 'success') {
+          throw new Error(
+            `Could not observe surface before "${input.actionKind}": ${observation.error.message}`,
+          );
+        }
+
+        /*
+         * Ownership remains valid before target resolution.
+         */
+        context.sessionManager.access('REPLAY');
+
+        const resolution = await context.surface.resolveTarget(
+          {
+            observationId: observation.observation.observationId,
+            description: input.target.description,
+            strategyIndex: 0,
+            strategy: input.target.strategy,
+          },
+          {
+            timeoutMs: 5_000,
+          },
+        );
+
+        if (resolution.status !== 'resolved') {
+          throw new Error(
+            `Could not uniquely resolve "${input.target.description}": ${resolution.status}`,
+          );
+        }
+
+        action = input.target.buildAction(resolution.target);
+      }
+
+      /*
+       * Final ownership gate immediately before execution.
+       */
+      context.sessionManager.access('REPLAY');
+
+      const result = await context.surface.perform(
+        {
+          actionId: `hitl-demo-${input.step}-${input.actionKind}`,
+          action,
+        },
+        {
+          timeoutMs: 5_000,
+        },
+      );
+
+      if (result.status !== 'success') {
+        throw new Error(`Demo action "${input.actionKind}" failed: ${result.error.message}`);
+      }
 
       await context.evidenceRecorder.recordEvent({
-        step,
+        step: input.step,
         eventType: 'action',
         action: {
-          kind: actionKind,
+          kind: input.actionKind,
         },
         result: {
           status: 'success',
         },
+        evidenceRefs: result.evidenceRefs,
       });
     };
 
     const formUrl = `${demo.origin}/member/${MEMBER_ID}/subaccounts/new`;
 
-    await recordAllowedAction(1, formUrl, 'navigate', async () => {
-      await automatedPage().goto(formUrl, {
-        waitUntil: 'domcontentloaded',
-      });
+    await performAutomatedDemoAction({
+      step: 1,
+
+      url: formUrl,
+
+      actionKind: 'navigate',
+
+      systemRiskLevel: 'READ_ONLY',
     });
 
-    await recordAllowedAction(2, formUrl, 'select', async () => {
-      await automatedPage().locator('#parent-account').selectOption({
-        index: 1,
-      });
+    await performAutomatedDemoAction({
+      step: 2,
+
+      url: formUrl,
+
+      actionKind: 'select',
+
+      systemRiskLevel: 'REVERSIBLE',
+
+      target: {
+        description: 'Parent Account select',
+
+        strategy: {
+          kind: 'label',
+
+          label: {
+            value: 'Parent Account',
+
+            mode: 'exact',
+
+            caseSensitive: false,
+          },
+        },
+
+        buildAction: (target) => ({
+          kind: 'select',
+
+          target,
+
+          option: {
+            kind: 'value',
+
+            value: 'CHK-1001',
+          },
+        }),
+      },
     });
 
-    await recordAllowedAction(3, formUrl, 'type', async () => {
-      await automatedPage().locator('#subaccount-name').fill(NICKNAME);
+    await performAutomatedDemoAction({
+      step: 3,
+
+      url: formUrl,
+
+      actionKind: 'type',
+
+      systemRiskLevel: 'REVERSIBLE',
+
+      target: {
+        description: 'Sub-account Nickname input',
+
+        strategy: {
+          kind: 'label',
+
+          label: {
+            value: 'Sub-account Nickname',
+
+            mode: 'exact',
+
+            caseSensitive: false,
+          },
+        },
+
+        buildAction: (target) => ({
+          kind: 'type',
+
+          target,
+
+          text: NICKNAME,
+
+          mode: 'replace',
+        }),
+      },
     });
 
-    await recordAllowedAction(4, formUrl, 'click', async () => {
-      await Promise.all([
-        automatedPage().waitForLoadState('domcontentloaded'),
-        automatedPage().getByRole('button', { name: 'Review Sub-account' }).click(),
-      ]);
+    await performAutomatedDemoAction({
+      step: 4,
+
+      url: formUrl,
+
+      actionKind: 'click',
+
+      systemRiskLevel: 'REVERSIBLE',
+
+      target: {
+        description: 'Review Sub-account button',
+
+        strategy: {
+          kind: 'role-name',
+
+          role: 'button',
+
+          name: {
+            value: 'Review Sub-account',
+
+            mode: 'exact',
+
+            caseSensitive: false,
+          },
+        },
+
+        buildAction: (target) => ({
+          kind: 'click',
+
+          target,
+        }),
+      },
     });
 
     const staleObserved = await context.surface.observe({
       timeoutMs: 5_000,
+
       maxTextLength: 8_000,
+
       maxControls: 100,
     });
 
@@ -343,21 +577,30 @@ async function main(): Promise<void> {
 
     const gate = evaluateReplayPolicy({
       step: confirmStep,
+
       url: commitUrl,
+
       policyEngine: context.policyEngine,
     });
 
     await context.evidenceRecorder.recordEvent({
       step: 5,
+
       eventType: 'policy_decision',
+
       action: confirmStep.action,
+
       target: confirmStep.target ?? null,
+
       policyDecision:
         gate.status === 'intervention_required'
           ? {
               decision: 'REQUIRE_HUMAN',
+
               code: gate.intervention.code,
+
               riskLevel: gate.intervention.details.effectiveRisk,
+
               matchedRuleId: gate.intervention.details.matchedRuleId,
             }
           : {
@@ -372,44 +615,73 @@ async function main(): Promise<void> {
     }
 
     /*
+
      * Capture reviewer/operator display information while REPLAY is still ACTIVE.
+
      * After createAndPause(), SessionManager.access('REPLAY') must fail by design.
+
      */
-    const browserUrlAtHandoff = automatedPage().url();
+
+    const browserUrlAtHandoff =
+      staleObserved.observation.location.kind === 'web'
+        ? staleObserved.observation.location.url
+        : 'non-web-surface';
 
     const intervention = await controller.createAndPause({
       id: interventionId,
+
       context,
+
       source: 'REPLAY',
+
       capabilityId: CAPABILITY_ID,
+
       capabilityVersion: CAPABILITY_VERSION,
+
       stepId: confirmStep.id,
+
       reasonCode: 'HUMAN_APPROVAL_REQUIRED',
+
       reason: 'Confirm Create Sub-Account is irreversible and requires a human operator.',
+
       observedState:
         'Synthetic sub-account review screen is open with the final confirmation button visible.',
+
       evidenceRefs: [],
     });
 
     process.stdout.write('\n=== REAL HITL DEMO PAUSED ===\n');
+
     process.stdout.write(`Run ID: ${runId}\n`);
+
     process.stdout.write(`Intervention ID: ${intervention.id}\n`);
+
     process.stdout.write(`Session ID: ${context.sessionManager.sessionId}\n`);
+
     process.stdout.write(`Operator server: ${operatorAddress.baseUrl}\n`);
+
     process.stdout.write(`Browser URL: ${browserUrlAtHandoff}\n\n`);
 
     process.stdout.write('Open a SECOND PowerShell terminal in this repository.\n\n');
+
     process.stdout.write('Run:\n');
+
     process.stdout.write(`  npm run intervention:acquire -- ${intervention.id}\n`);
+
     process.stdout.write(`  npm run intervention:start -- ${intervention.id}\n\n`);
+
     process.stdout.write(
       'Then manually click "Confirm Create Sub-Account" in the ALREADY-OPEN headed browser.\n\n',
     );
+
     process.stdout.write('After the browser shows "Sub-account created", run:\n');
+
     process.stdout.write(
       `  npm run intervention:manual-action -- ${intervention.id} Human completed final synthetic sub-account action\n`,
     );
+
     process.stdout.write(`  npm run intervention:resume -- ${intervention.id}\n\n`);
+
     process.stdout.write('Terminal 1 is waiting for the operator decision...\n');
 
     const decision = await waitForHumanDecision(manager, intervention.id);
@@ -417,28 +689,38 @@ async function main(): Promise<void> {
     if (decision === 'ABORTED') {
       const terminal = await finalizeHumanAbort({
         interventionId: intervention.id,
+
         context,
+
         manager,
+
         coordinator,
+
         liveRegistry: registry,
       });
 
       finalized = true;
 
       process.stdout.write('\nHITL demo aborted by the human operator.\n');
+
       process.stdout.write(`${JSON.stringify(terminal, null, 2)}\n`);
+
       return;
     }
 
     const resume = await resolveReplayResume({
       step: confirmStep,
+
       stepIndex: 4,
+
       staleObservationId: staleObserved.observation.observationId,
 
       observeFresh: async () => {
         const current = await context.surface.observe({
           timeoutMs: 5_000,
+
           maxTextLength: 8_000,
+
           maxControls: 100,
         });
 
@@ -457,9 +739,12 @@ async function main(): Promise<void> {
               }
             : {
                 status: 'not_satisfied' as const,
+
                 reason: 'Synthetic creation success text is absent after human resume.',
+
                 details: {
                   expected: 'Sub-account created',
+
                   observed: observation.visibleText,
                 },
               },
@@ -469,7 +754,9 @@ async function main(): Promise<void> {
     if (resume.status !== 'manual_step_resolved') {
       await coordinator.fail({
         code: 'ACTION_FAILED',
+
         phase: 'hitl_resume',
+
         resume,
       });
 
@@ -481,26 +768,40 @@ async function main(): Promise<void> {
     }
 
     /*
+
      * Important: no automated click of Confirm Create Sub-Account occurs here.
+
      * The human-completed irreversible step is treated as resolved only after
+
      * a fresh observation verifies its postcondition.
+
      */
+
     await context.evidenceRecorder.recordEvent({
       step: 6,
+
       eventType: 'intervention',
+
       result: {
         kind: 'resume_verified',
+
         interventionId: intervention.id,
+
         sessionId: context.sessionManager.sessionId,
+
         freshObservationId: resume.freshObservationId,
+
         pausedStepId: resume.stepId,
+
         duplicateRiskyActionExecuted: false,
       },
     });
 
     const finalObservation = await context.surface.observe({
       timeoutMs: 5_000,
+
       maxTextLength: 8_000,
+
       maxControls: 100,
     });
 
@@ -513,13 +814,20 @@ async function main(): Promise<void> {
 
     const summary = await coordinator.finish({
       status: 'success',
+
       result: {
         capabilityId: CAPABILITY_ID,
+
         capabilityVersion: CAPABILITY_VERSION,
+
         interventionId: intervention.id,
+
         sessionId: context.sessionManager.sessionId,
+
         manualStepResolved: true,
+
         duplicateRiskyActionExecuted: false,
+
         terminalState: 'Sub-account created',
       },
     });
@@ -527,31 +835,45 @@ async function main(): Promise<void> {
     finalized = true;
 
     process.stdout.write('\n=== REAL HITL DEMO SUCCEEDED ===\n');
+
     process.stdout.write(`Run ID: ${runId}\n`);
+
     process.stdout.write(`Intervention ID: ${intervention.id}\n`);
+
     process.stdout.write(`Session ID: ${context.sessionManager.sessionId}\n`);
+
     process.stdout.write(`Evidence directory: evidence/${runId}\n`);
+
     process.stdout.write(`Run status: ${summary.status}\n\n`);
+
     process.stdout.write('Next freeze the reviewer package:\n');
+
     process.stdout.write(
       `  npm run freeze-human-handoff-evidence -- ${intervention.id} ${runId}\n`,
     );
+
     process.stdout.write('Then verify it:\n');
+
     process.stdout.write('  npm run verify-human-handoff-evidence\n');
   } catch (error) {
     if (!finalized && coordinator.state === 'ACTIVE') {
       await coordinator
+
         .fail({
           code: 'APPLICATION_ERROR',
+
           phase: 'real_hitl_demo',
+
           message: error instanceof Error ? error.message : 'Unknown HITL demo failure',
         })
+
         .catch(() => undefined);
     }
 
     throw error;
   } finally {
     await operatorServer?.close().catch(() => undefined);
+
     await closeServer(demo.server).catch(() => undefined);
   }
 }
@@ -560,5 +882,6 @@ void main().catch((error: unknown) => {
   const message = error instanceof Error ? error.message : String(error);
 
   process.stderr.write(`Real HITL demo failed: ${message}\n`);
+
   process.exitCode = 1;
 });

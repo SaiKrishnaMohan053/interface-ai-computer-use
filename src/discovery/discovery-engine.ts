@@ -1334,6 +1334,8 @@ export class DiscoveryEngine {
       );
     }
 
+    assertDiscoveryActionOwnership(context);
+
     if (decision.kind === 'wait') {
       const timeoutMs = this.remainingTimeout(state);
 
